@@ -1,0 +1,22 @@
+Panel sequencing
+
+
+Σελίδα 3 (ενότητα "Detecting SNVs and indels"):
+
+Το targeted (panel) sequencing προσφέρει υψηλό βάθος αλληλούχησης (500–1,000x) για γνωστές μεταλλάξεις, ενώ το WGS και το exome έχουν χαμηλότερο βάθος (30–60x και 100–200x αντίστοιχα).
+
+
+
+"targeted sequencing [...] offers high depth [...] making it more sensitive for subclonal mutations".
+
+Σελίδα 6 (σύγκριση μεθόδων):
+
+Τα panels εστιάζουν σε συγκεκριμένες γονιδιακές περιοχές, με αποτέλεσμα μεγαλύτερη κάλυψη και ευαισθησία σε σπάνιες μεταλλάξεις (π.χ. SNVs/indels) σε σύγκριση με το ευρύτερο αλλά ρηχότερο WGS/exome.
+
+
+WGS: Έχει χαμηλό βάθος (~30–60x), οπότε χάνει subclonal μεταλλάξεις.
+
+Exome: Παρόλο που έχει μεγαλύτερο βάθος από το WGS (~100–200x), είναι λιγότερο ευαίσθητο από τα panels λόγω μη ομοιόμορφης κάλυψης (βλ. σελ. 3: "uneven coverage across target regions").
+
+Single-end RNA-seq: Κατάλληλο για γονιδιακές εκφράσεις, όχι για ευαισθησία σε SNVs/indels.
+
