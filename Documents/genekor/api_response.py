@@ -1,17 +1,34 @@
 from fastapi import FastAPI
 import pandas as pd
+import ast
 
 app = FastAPI()
-df = pd.read_csv('brca_acmg_variants.csv') #Ορίζει ένα GET endpoint με μια παράμετρο criterion (π.χ., PS1, PM5).
 
-@app.get("/variants/{criterion}")
-def get_variants(criterion: str):
-    results = df[df['acmg_criteria'].apply(lambda x: criterion in x)] #Φιλτράρει το DataFrame για να βρει μεταλλάξεις όπου το criterion υπάρχει στη λίστα acmg_criteria.
+# Φόρτωμα του CSV
+df = pd.read_csv('brca_acmg_variants.csv')
+
+# Αν η στήλη acmg_criteria περιέχει λίστες ως string, τις μετατρέπουμε σε Python λίστες
+df['acmg_criteria'] = df['acmg_criteria'].apply(
+    lambda x: ast.literal_eval(x) if isinstance(x, str) else []
+)
+
+# Νέο endpoint: Δίνεις μια μετάλλαξη και επιστρέφει τύπο και κριτήρια
+@app.get("/variant_info/{mutation}")
+def get_variant_info(mutation: str):
+    # Φιλτράρει με βάση την στήλη 'ProteinChange'
+    match = df[df['ProteinChange'] == mutation]
+
+    if match.empty:
+        return {
+            "mutation": mutation,
+            "message": "Η μετάλλαξη δεν βρέθηκε στη βάση δεδομένων."
+        }
+
+    # Παίρνει την πρώτη καταχώρηση
+    row = match.iloc[0]
+
     return {
-        "criterion": criterion,
-        "count": len(results),
-        "variants": results.to_dict(orient='records') #Μετατρέπει τα αποτελέσματα σε λίστα από dictionaries (κάθε dictionary αντιστοιχεί σε μια μετάλλαξη)
+        "mutation": mutation,
+        "variant_type": row['variant_type'],
+        "acmg_criteria": row['acmg_criteria'],
     }
-
-
-#aithma GET /variants/PS1
