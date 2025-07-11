@@ -122,3 +122,6 @@ def get_variants(criterion: str):
     }
   ]
 }
+
+
+http://localhost:8000/variant_info/p.Cys61Gly
