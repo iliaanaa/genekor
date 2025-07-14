@@ -17,7 +17,7 @@ df_merged = pd.merge(
     df_submissions, 
     on='VariationID', 
     how='left'
-) #plhrofories apo alla submissions gia plhresterh eikona
+) #plhrofories apo alla submissions gia plhresterh eikona   
 
 
 # KATHARISMOS KAI METASXHMATISMOS DATA
@@ -94,3 +94,49 @@ df_final['conflicting_interpretations'] = df_final['conflicting_interpretations'
 
 # save
 df_final.to_csv('brca1_clinvar_processed.csv', index=False)
+
+
+# RCV ACCESSION
+import pandas as pd
+
+# Φόρτωση δεδομένων
+df = pd.read_csv('variant_summary.txt', sep='\t', low_memory=False)
+
+# Φιλτράρισμα για BRCA1 και εξαγωγή RCVaccession
+df_brca = df[df['GeneSymbol'] == 'BRCA1']
+rcv_data = df_brca[['VariationID', 'RCVaccession']].copy()
+
+# Διαχωρισμός πολλαπλών RCVaccession σε λίστα
+rcv_data['RCVaccession'] = rcv_data['RCVaccession'].str.split('|')
+
+# Επεκτεταμένο DataFrame με μία γραμμή ανά RCVaccession
+rcv_expanded = rcv_data.explode('RCVaccession')
+
+
+# RCV STO DATAFRAME
+df_final = pd.merge(
+    df_brca[['VariationID', 'GeneSymbol', 'HGVS_c', 'HGVS_p']],
+    rcv_expanded,
+    on='VariationID',
+    how='left'
+)
+
+# Αποθήκευση
+df_final.to_csv('brca1_with_rcv.csv', index=False)
+
+# GENIKA
+Αν μια μετάλλαξη έχει πολλά RCVs, αποφασίζουμε αν θα
+
+Χωρίσουμε σε ξεχωριστές γραμμές (.explode()).
+
+Αποθηκεύσουμε ως λίστα σε μία γραμμή (π.χ., ["RCV000123456.1", "RCV000789012.3"]).
+
+Σύνδεση με PhenotypeList:
+Κάθε RCVaccession αντιστοιχεί σε ένα PhenotypeList (κλινική κατάσταση). Για ανάλυση:
+df_brca[['RCVaccession', 'PhenotypeList']].drop_duplicates()
+
+Αξιοπιστία Ερμηνείας:
+
+Τα RCVs με ReviewStatus = "Expert panel" είναι πιο αξιόπιστα.
+
+Φιλτράρουμε με βάση το ReviewStatus αν χρειάζεται.
