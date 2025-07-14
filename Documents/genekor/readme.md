@@ -1,5 +1,5 @@
 
-SYMPERASMA
+# SYMPERASMA
 columns_to_keep = [
     'VariationID', 'GeneSymbol', 'HGVS_c', 'HGVS_p', 
     'ClinicalSignificance', 'ReviewStatus', 'PhenotypeList',
@@ -61,7 +61,7 @@ HGVS_p (Protein change): p.Arg504Gly
 
 
 
-PARDEIGMA KWDIKA
+# PARDEIGMA KWDIKA
 import pandas as pd
 import json
 
@@ -140,3 +140,8 @@ df_brca[['RCVaccession', 'PhenotypeList']].drop_duplicates()
 Τα RCVs με ReviewStatus = "Expert panel" είναι πιο αξιόπιστα.
 
 Φιλτράρουμε με βάση το ReviewStatus αν χρειάζεται.
+
+
+
+
+

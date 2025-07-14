@@ -256,4 +256,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-    #to api sto telos tha apantaei me enq json to eides rhs metallahs kai to kritrio. ayto to json pairnei plhrofoeis mono apo to csv h kai apo thn vash?
+   

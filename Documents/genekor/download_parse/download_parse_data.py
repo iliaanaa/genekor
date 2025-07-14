@@ -6,206 +6,254 @@ import shutil
 import urllib.request
 import json
 from datetime import datetime
+from typing import Dict, List, Optional
 
-#--- Ρυθμίσεις ---
-CLINVAR_URL = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz"
-GZ_FILE = "variant_summary.txt.gz"
-TSV_FILE = "variant_summary.txt"
+# --- Ρυθμίσεις ---
+CLINVAR_VARIANT_URL = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz"
+CLINVAR_SUBMISSION_URL = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/submission_summary.txt.gz" #μορφή gzip
 GENE_FILTER = "BRCA1"
-OUTPUT_CSV = "brca_variants.csv"
+ASSEMBLY_FILTER = "GRCh38"  #Επιλέγει την έκδοση GRCh38 του γονιδιώματος
 
-#--- Ρυθμίσεις Βάσης Δεδομένων ---
-DB_NAME = "clinvar_db"
-DB_USER = "postgres"
-DB_PASS = "your_password"
-DB_HOST = "localhost"
-DB_PORT = 5432
-
-#--- Σύνδεση στη Βάση ---
-def connect_db():
-return psycopg2.connect(
-dbname=DB_NAME,
-user=DB_USER,
-password=DB_PASS,
-host=DB_HOST,
-port=DB_PORT
-)
-
-#--- Δημιουργία Πινάκων ---
-def create_tables(conn):
-with conn.cursor() as cur:
-# Πίνακας για πληροφορίες έκδοσης
-cur.execute("""
-CREATE TABLE IF NOT EXISTS clinvar_release_info (
-id SERIAL PRIMARY KEY,
-release_version TEXT NOT NULL,
-release_date DATE NOT NULL,
-downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-""")
-
-    # Κύριος πίνακας μεταλλάξεων
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS variants (
-        variant_id BIGINT PRIMARY KEY,
-        gene_symbol TEXT NOT NULL,
-        dna_change TEXT,
-        protein_change TEXT,
-        clinical_significance TEXT,
-        review_status TEXT,
-        condition TEXT,
-        variant_type TEXT,
-        phenotypes TEXT,
-        submitter TEXT,
-        acmg_criteria JSONB,
-        conflicting_interpretations JSONB
-    );
-    """)
-    conn.commit()
-#--- Λήψη έκδοσης ClinVar ---
-def get_remote_release_version():
-try:
-with urllib.request.urlopen("https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/README.txt") as response:
-for line in response.read().decode().splitlines():
-if "Release" in line and "ClinVar" in line:
-return line.strip()
-return None
-except Exception as e:
-print(f"Σφάλμα κατά τη λήψη έκδοσης: {e}")
-return None
-
-#--- Κατέβασμα και αποσυμπίεση δεδομένων ---
-def download_clinvar():
-print("Κατέβασμα δεδομένων ClinVar...")
-urllib.request.urlretrieve(CLINVAR_URL, GZ_FILE)
-print("Αποσυμπίεση...")
-with gzip.open(GZ_FILE, 'rb') as f_in, open(TSV_FILE, 'wb') as f_out:
-shutil.copyfileobj(f_in, f_out)
-
-#--- Εξαγωγή και μετασχηματισμός δεδομένων BRCA1 ---
-def extract_and_transform():
-print("Φόρτωση και μετασχηματισμός δεδομένων...")
-df = pd.read_csv(TSV_FILE, sep='\t', low_memory=False)
-
-# Φιλτράρισμα για BRCA1
-df = df[df["GeneSymbol"] == GENE_FILTER]
-
-# Μετασχηματισμός στη ζητούμενη μορφή
-df = df[[
-    'VariationID', 'GeneSymbol', 'HGVS_c', 'HGVS_p',
-    'ClinicalSignificance', 'ReviewStatus', 'Name', 'Type',
-    'PhenotypeIDS', 'Submitter'
-]].rename(columns={
-    'VariationID': 'variant_id',
-    'GeneSymbol': 'gene_symbol',
-    'HGVS_c': 'dna_change',
-    'HGVS_p': 'protein_change',
-    'ClinicalSignificance': 'clinical_significance',
-    'ReviewStatus': 'review_status',
-    'Name': 'condition',
-    'Type': 'variant_type',
-    'PhenotypeIDS': 'phenotypes',
-    'Submitter': 'submitter'
-})
-
-# Προσθήκη των ACMG κριτηρίων (θα τα υπολογίσουμε αργότερα)
-df['acmg_criteria'] = None
-df['conflicting_interpretations'] = None
-
-return df
-#--- Υπολογισμός ACMG κριτηρίων ---
-def calculate_acmg_criteria(df):
-print("Υπολογισμός ACMG κριτηρίων...")
-
-# Λεξικό με γνωστές pathogenic μεταλλάξεις
-known_pathogenic = {
-    'p.Arg504Gly': {'dna': 'c.1510A>T', 'significance': 'Pathogenic'},
-    'p.Trp41*': {'dna': 'c.123G>A', 'significance': 'Pathogenic'}
+# --- Ρυθμίσεις Βάσης Δεδομένων ---
+DB_CONFIG = {
+    "dbname": "clinvar_db",
+    "user": "postgres",
+    "password": "your_password",
+    "host": "localhost",
+    "port": 5432
 }
 
-for index, row in df.iterrows():
+# --- Βοηθητικές Συναρτήσεις ---
+def download_file(url: str, output_path: str) -> None:
+    """Κατέβασμα και αποσυμπίεση αρχείου"""
+    print(f"Κατέβασμα {url}...")
+    urllib.request.urlretrieve(url, output_path)
+    
+    if output_path.endswith(".gz"):
+        print(f"Αποσυμπίεση {output_path}...")
+        with gzip.open(output_path, 'rb') as f_in:
+            with open(output_path.replace(".gz", ""), 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+
+def create_tables(conn: psycopg2.extensions.connection) -> None:
+    """Δημιουργία πινάκων στη βάση"""
+    with conn.cursor() as cur:
+        # Κύριος πίνακας μεταλλάξεων
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS brca1_variants (
+            variation_id BIGINT PRIMARY KEY,
+            gene_symbol TEXT NOT NULL,
+            hgvs_c TEXT,
+            hgvs_p TEXT,
+            clinical_significance TEXT,
+            review_status TEXT,
+            phenotype_list TEXT,
+            assembly TEXT NOT NULL,
+            chromosome TEXT,
+            start_pos INTEGER,
+            end_pos INTEGER,
+            reference_allele TEXT,
+            alternate_allele TEXT,
+            acmg_criteria JSONB,
+            conflicting_interpretations JSONB,
+            rcv_accessions TEXT[],
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            last_evaluated DATE
+        );
+        """)
+        conn.commit()
+
+# --- Λογική ACMG Criteria ---
+def apply_acmg_criteria(row: pd.Series) -> List[str]:
+    """Υπολογισμός κριτηρίων ACMG για μια μετάλλαξη"""
     criteria = []
     
-    # Έλεγχος για PS1 (ίδιο protein change, διαφορετικό DNA change)
-    if row['protein_change'] in known_pathogenic:
-        if row['dna_change'] != known_pathogenic[row['protein_change']]['dna']:
+    # Γνωστές pathogenic μεταλλάξεις (προσαρμόστε ανάλογα)
+    known_pathogenic = {
+        'p.Arg504Gly': {'dna': 'c.1510A>T', 'significance': 'Pathogenic'},
+        'p.Trp41*': {'dna': 'c.123G>A', 'significance': 'Pathogenic'}
+    }
+
+    # Αξιόπιστοι υποβάλλοντες
+    trusted_submitters = {'ClinVar', 'ExpertLab'}
+    
+    # Θέσεις με γνωστές παθογονικές μεταλλάξεις (π.χ. 41, 504)
+    pathogenic_positions = {41, 504}
+
+    # PS1: Ίδιο protein change, διαφορετικό DNA change
+    if row['HGVS_p'] in known_pathogenic:
+        if row['HGVS_c'] != known_pathogenic[row['HGVS_p']]['dna']:
             criteria.append("PS1")
     
-    # Προσθήκη άλλων κριτηρίων (PM5, PP5, BP6) εδώ...
+    # Προσθέστε εδώ άλλα κριτήρια (PM5, PP5, κλπ)
+        # PM5
+    protein_pos = int(''.join(filter(str.isdigit, row['ProteinChange']))) if pd.notna(row['ProteinChange']) else None
+    if protein_pos in pathogenic_positions and row['ProteinChange'] not in known_pathogenic:
+        criteria.append('PM5')
     
-    # Αποθήκευση των κριτηρίων
-    df.at[index, 'acmg_criteria'] = json.dumps(criteria) if criteria else None
+    # PP5/BP6
+    if row['Submitter'] in trusted_submitters:
+        if row['ClinicalSignificance'] == 'Pathogenic':
+            criteria.append('PP5')
+        elif row['ClinicalSignificance'] == 'Benign':
+            criteria.append('BP6')
+    
+    
+    return criteria
 
-return df
-#--- Αποθήκευση σε CSV ---
-def save_to_csv(df, filename=OUTPUT_CSV):
-print(f"Αποθήκευση σε {filename}...")
+# --- Επεξεργασία Δεδομένων ---
+def process_clinvar_data(variant_path: str, submission_path: str) -> pd.DataFrame:
+    #Φορτώνει το variant_summary και φιλτράρει για BRCA1 στο assembly GRCh38.
 
-# Μετατροπή των λιστών/λεξικών σε JSON strings για το CSV
-df_csv = df.copy()
-df_csv['acmg_criteria'] = df_csv['acmg_criteria'].apply(lambda x: json.loads(x) if x else [])
+#Επιλέγει μόνο κάποιες στήλες.
 
-df_csv.to_csv(filename, index=False, encoding='utf-8')
-#--- Εισαγωγή στη βάση δεδομένων ---
-def insert_to_database(conn, df):
-print("Εισαγωγή δεδομένων στη βάση...")
-with conn.cursor() as cur:
-for _, row in df.iterrows():
-cur.execute("""
-INSERT INTO variants (
-variant_id, gene_symbol, dna_change, protein_change,
-clinical_significance, review_status, condition,
-variant_type, phenotypes, submitter, acmg_criteria,
-conflicting_interpretations
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-ON CONFLICT (variant_id) DO UPDATE SET
-gene_symbol = EXCLUDED.gene_symbol,
-dna_change = EXCLUDED.dna_change,
-protein_change = EXCLUDED.protein_change,
-clinical_significance = EXCLUDED.clinical_significance,
-review_status = EXCLUDED.review_status,
-condition = EXCLUDED.condition,
-variant_type = EXCLUDED.variant_type,
-phenotypes = EXCLUDED.phenotypes,
-submitter = EXCLUDED.submitter,
-acmg_criteria = EXCLUDED.acmg_criteria,
-conflicting_interpretations = EXCLUDED.conflicting_interpretations;
-""", (
-row['variant_id'], row['gene_symbol'], row['dna_change'],
-row['protein_change'], row['clinical_significance'],
-row['review_status'], row['condition'], row['variant_type'],
-row['phenotypes'], row['submitter'], row['acmg_criteria'],
-row['conflicting_interpretations']
-))
-conn.commit()
+#Φορτώνει το submission_summary.
 
-#--- Κύρια λειτουργία ---
+#Κάνει merge με βάση το VariationID.
+
+#Τυποποιεί το πεδίο κλινικής σημασίας (ClinicalSignificance).
+
+#Υπολογίζει τα ACMG κριτήρια για κάθε μετάλλαξη.
+
+#Ομαδοποιεί τα conflicting interpretations (διαφωνίες κλινικών αξιολογήσεων).
+
+#Δημιουργεί το τελικό DataFrame με όλα τα πεδία που θα αποθηκευτούν.
+
+    """Φόρτωση και επεξεργασία δεδομένων ClinVar"""
+    # Φόρτωση variant data
+    df_variants = pd.read_csv(variant_path, sep='\t', low_memory=False)
+    
+    # Φιλτράρισμα για BRCA1 και συγκεκριμένο assembly
+    df_brca = df_variants[
+        (df_variants['GeneSymbol'] == GENE_FILTER) & 
+        (df_variants['Assembly'] == ASSEMBLY_FILTER)
+    ].copy()
+    
+    # Επιλογή στηλών
+    columns_to_keep = [
+        'VariationID', 'GeneSymbol', 'HGVS_c', 'HGVS_p', 
+        'ClinicalSignificance', 'ReviewStatus', 'PhenotypeList',
+        'Submitter', 'Assembly', 'Chromosome', 'Start', 'Stop',
+        'ReferenceAllele', 'AlternateAllele', 'RCVaccession'
+    ]
+    df_brca = df_brca[columns_to_keep]
+    
+    # Φόρτωση submission data
+    df_submissions = pd.read_csv(submission_path, sep='\t')
+    
+    # Συγχώνευση και επεξεργασία
+    df_merged = pd.merge(
+        df_brca,
+        df_submissions,
+        on='VariationID',
+        how='left'
+    )
+    
+    # Τυποποίηση κλινικής σημασίας
+    significance_map = {
+        'Pathogenic': 'Pathogenic',
+        'Likely pathogenic': 'Likely_pathogenic',
+        'Benign': 'Benign',
+        'Uncertain significance': 'VUS'
+    }
+    df_merged['ClinicalSignificance'] = df_merged['ClinicalSignificance_x'].map(significance_map)
+    
+    # Υπολογισμός ACMG criteria
+    df_merged['acmg_criteria'] = df_merged.apply(apply_acmg_criteria, axis=1)
+    
+    # Ομαδοποίηση conflicting interpretations
+    conflicting = df_merged.groupby('VariationID').apply(
+        lambda x: x[['Submitter', 'ClinicalSignificance_y']].rename(
+            columns={'ClinicalSignificance_y': 'classification'}
+        ).to_dict('records')
+    )
+    
+    # Δημιουργία τελικού DataFrame
+    df_final = df_brca.drop_duplicates(subset=['VariationID']).set_index('VariationID')
+    df_final['acmg_criteria'] = df_merged.groupby('VariationID')['acmg_criteria'].first()
+    df_final['conflicting_interpretations'] = conflicting
+    df_final['rcv_accessions'] = df_final['RCVaccession'].str.split('|')
+    
+    return df_final.reset_index()
+
+# --- Εισαγωγή στη Βάση ---
+def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -> None:
+    """Εισαγωγή δεδομένων στη βάση"""
+    with conn.cursor() as cur:
+        for _, row in df.iterrows():
+            cur.execute("""
+            INSERT INTO brca1_variants (
+                variation_id, gene_symbol, hgvs_c, hgvs_p,
+                clinical_significance, review_status, phenotype_list,
+                assembly, chromosome, start_pos, end_pos,
+                reference_allele, alternate_allele, acmg_criteria,
+                conflicting_interpretations, rcv_accessions
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            ON CONFLICT (variation_id) DO UPDATE SET
+                gene_symbol = EXCLUDED.gene_symbol,
+                hgvs_c = EXCLUDED.hgvs_c,
+                hgvs_p = EXCLUDED.hgvs_p,
+                clinical_significance = EXCLUDED.clinical_significance,
+                review_status = EXCLUDED.review_status,
+                phenotype_list = EXCLUDED.phenotype_list,
+                assembly = EXCLUDED.assembly,
+                chromosome = EXCLUDED.chromosome,
+                start_pos = EXCLUDED.start_pos,
+                end_pos = EXCLUDED.end_pos,
+                reference_allele = EXCLUDED.reference_allele,
+                alternate_allele = EXCLUDED.alternate_allele,
+                acmg_criteria = EXCLUDED.acmg_criteria,
+                conflicting_interpretations = EXCLUDED.conflicting_interpretations,
+                rcv_accessions = EXCLUDED.rcv_accessions,
+                last_updated = CURRENT_TIMESTAMP;
+            """, (
+                row['VariationID'], row['GeneSymbol'], row['HGVS_c'],
+                row['HGVS_p'], row['ClinicalSignificance'], row['ReviewStatus'],
+                row['PhenotypeList'], row['Assembly'], row['Chromosome'],
+                row['Start'], row['Stop'], row['ReferenceAllele'],
+                row['AlternateAllele'], json.dumps(row['acmg_criteria']),
+                json.dumps(row['conflicting_interpretations']),
+                row['rcv_accessions']
+            ))
+        conn.commit()
+
+# --- Κύρια Λειτουργία ---
 def main():
-# Σύνδεση στη βάση δεδομένων
-conn = connect_db()
-create_tables(conn)
+    # Σύνδεση στη βάση
+    conn = psycopg2.connect(**DB_CONFIG)
+    create_tables(conn)
+    
+    try:
+        # Λήψη αρχείων
+        variant_gz = "variant_summary.txt.gz"
+        submission_gz = "submission_summary.txt.gz"
+        
+        download_file(CLINVAR_VARIANT_URL, variant_gz)
+        download_file(CLINVAR_SUBMISSION_URL, submission_gz)
+        
+        # Επεξεργασία δεδομένων
+        variant_file = variant_gz.replace(".gz", "")
+        submission_file = submission_gz.replace(".gz", "")
+        
+        df_final = process_clinvar_data(variant_file, submission_file)
+        
+        # Εισαγωγή στη βάση
+        insert_to_database(conn, df_final)
+        
+        print("Επεξεργασία ολοκληρώθηκε επιτυχώς!")
+        
+    except Exception as e:
+        print(f"Σφάλμα: {e}")
+    finally:
+        # Καθαρισμός και κλείσιμο σύνδεσης
+        for f in [variant_gz, submission_gz, variant_file, submission_file]:
+            if os.path.exists(f):
+                os.remove(f)
+        conn.close()
 
-# Κατέβασμα δεδομένων
-download_clinvar()
+if __name__ == "__main__":
+    main()
 
-# Εξαγωγή και μετασχηματισμός
-df = extract_and_transform()
-df = calculate_acmg_criteria(df)
-
-# Αποθήκευση σε CSV
-save_to_csv(df)
-
-# Εισαγωγή στη βάση δεδομένων
-insert_to_database(conn, df)
-
-# Κλείσιμο σύνδεσης
-conn.close()
-
-# Καθαρισμός προσωρινών αρχείων
-for f in [GZ_FILE, TSV_FILE]:
-    if os.path.exists(f):
-        os.remove(f)
-
-print("Ολοκληρώθηκε η επεξεργασία!")
-if name == "main":
-main()
+    #to api sto telos tha apantaei me enq json to eides rhs metallahs kai to kritrio. ayto to json pairnei plhrofoeis mono apo to csv h kai apo thn vash?
