@@ -1,6 +1,7 @@
 import pandas as pd
 import psycopg2
 import os
+import re
 import gzip
 import shutil
 import urllib.request
@@ -57,7 +58,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
             acmg_criteria JSONB,
             conflicting_interpretations JSONB,
             rcv_accessions TEXT[],
-            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_evaluated DATE
         );
         """)
@@ -238,7 +239,6 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
         conn.commit()
 
 
-
 def categorize_variant_name(name: str) -> dict:
     """
     Κατηγοριοποιεί το όνομα μετάλλαξης από το πεδίο 'Name' του ClinVar
@@ -253,20 +253,26 @@ def categorize_variant_name(name: str) -> dict:
     
     if not pd.isna(name) and isinstance(name, str):
         # Κανονικές εκφράσεις για αναγνώριση τύπων μεταλλάξεων
-        dna_pattern = re.compile(r'(^|\s)(c\.\S+)')
-        protein_pattern = re.compile(r'(^|\s)(p\.\S+)')
+        dna_pattern = re.compile(r'(c\.[^*\s]+)')  # DNA μεταλλάξεις (c.) που δεν περιέχουν *
+        dna_star_pattern = re.compile(r'(c\.\*[\d_]+[^\s)]*)')  # DNA μεταλλάξεις με * (π.χ. c.*103_*106del)
+        protein_pattern = re.compile(r'(p\.[^\s)]+)')  # Πρωτεϊνικές μεταλλάξεις (p.)
         
-        # Έλεγχος για DNA μεταλλάξεις (c.)
+        # Έλεγχος για DNA μεταλλάξεις (κανονικές και με *)
         dna_match = dna_pattern.search(name)
+        dna_star_match = dna_star_pattern.search(name)
+        
         if dna_match:
             result['variant_type'] = 'DNA'
-            result['DNA_variant'] = dna_match.group(2)
+            result['DNA_variant'] = dna_match.group(1)
+        elif dna_star_match:
+            result['variant_type'] = 'DNA'
+            result['DNA_variant'] = dna_star_match.group(1)
         
-        # Έλεγχος για πρωτεϊνικές μεταλλάξεις (p.)
+        # Έλεγχος για πρωτεϊνικές μεταλλάξεις
         protein_match = protein_pattern.search(name)
-        if protein_match:
+        if protein_match and not result['DNA_variant']:  # Προτεραιότητα στις DNA μεταλλάξεις
             result['variant_type'] = 'Protein'
-            result['Protein_variant'] = protein_match.group(2)
+            result['Protein_variant'] = protein_match.group(1)
         
         # Αν δεν βρέθηκε τίποτα από τα παραπάνω
         if not result['variant_type']:
