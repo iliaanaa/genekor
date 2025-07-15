@@ -237,6 +237,70 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
             ))
         conn.commit()
 
+
+
+def categorize_variant_name(name: str) -> dict:
+    """
+    Κατηγοριοποιεί το όνομα μετάλλαξης από το πεδίο 'Name' του ClinVar
+    σε μεταλλάξεις DNA (c.), πρωτεΐνης (p.) και άλλους τύπους
+    """
+    result = {
+        'variant_type': None,  # 'DNA', 'Protein', 'Other'
+        'DNA_variant': None,
+        'Protein_variant': None,
+        'Other_variant': None
+    }
+    
+    if not pd.isna(name) and isinstance(name, str):
+        # Κανονικές εκφράσεις για αναγνώριση τύπων μεταλλάξεων
+        dna_pattern = re.compile(r'(^|\s)(c\.\S+)')
+        protein_pattern = re.compile(r'(^|\s)(p\.\S+)')
+        
+        # Έλεγχος για DNA μεταλλάξεις (c.)
+        dna_match = dna_pattern.search(name)
+        if dna_match:
+            result['variant_type'] = 'DNA'
+            result['DNA_variant'] = dna_match.group(2)
+        
+        # Έλεγχος για πρωτεϊνικές μεταλλάξεις (p.)
+        protein_match = protein_pattern.search(name)
+        if protein_match:
+            result['variant_type'] = 'Protein'
+            result['Protein_variant'] = protein_match.group(2)
+        
+        # Αν δεν βρέθηκε τίποτα από τα παραπάνω
+        if not result['variant_type']:
+            result['variant_type'] = 'Other'
+            result['Other_variant'] = name
+    
+    return result
+
+def process_clinvar_data(variant_path: str) -> pd.DataFrame:
+    """
+    Ολοκληρωμένη συνάρτηση επεξεργασίας δεδομένων ClinVar
+    με κατηγοριοποίηση βάσει του πεδίου Name
+    """
+    # Φόρτωση δεδομένων ClinVar
+    df = pd.read_csv(variant_path, sep='\t', low_memory=False)
+    
+    # Φιλτράρισμα για BRCA1 και GRCh38
+    df_brca = df[(df['GeneSymbol'] == 'BRCA1') & (df['Assembly'] == 'GRCh38')].copy()
+    
+    # Κατηγοριοποίηση μεταλλάξεων βάσει του πεδίου Name
+    df_brca['VariantName_analysis'] = df_brca['Name'].apply(categorize_variant_name)
+    
+    # Δημιουργία νέων στηλών
+    df_brca['Variant_type'] = df_brca['VariantName_analysis'].apply(lambda x: x['variant_type'])
+    df_brca['DNA_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['DNA_variant'])
+    df_brca['Protein_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Protein_variant'])
+    df_brca['Other_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Other_variant'])
+    
+    # Αφαίρεση της προσωρινής στήλης ανάλυσης
+    df_brca.drop(columns=['VariantName_analysis'], inplace=True)
+    
+    return df_brca
+
+
 # --- Κύρια Λειτουργία ---
 def main():
     # Σύνδεση στη βάση
