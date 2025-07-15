@@ -1,0 +1,1 @@
+df_brca.to_csv('brca_acmg_classified.csv', index=False)

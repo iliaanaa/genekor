@@ -1,0 +1,75 @@
+import pandas as pd
+import os
+import gzip
+import shutil
+import urllib.request
+
+# --- Βήμα 1: Κατέβασμα και αποσυμπίεση ---
+url = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz"
+gz_path = "variant_summary.txt.gz"
+tsv_path = "variant_summary.txt"
+
+if not os.path.exists(tsv_path):
+    print("Κατεβάζω ClinVar TSV...")
+    urllib.request.urlretrieve(url, gz_path)
+
+    print("Αποσυμπιέζω...")
+    with gzip.open(gz_path, 'rb') as f_in:
+        with open(tsv_path, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+
+# --- Βήμα 2: Ανάγνωση και φιλτράρισμα ---
+print("Φορτώνω TSV...")
+df = pd.read_csv(tsv_path, sep="\t", low_memory=False)
+
+print("Φιλτράρω για BRCA1...")
+df = df[df["GeneSymbol"] == "BRCA1"]
+
+# --- Βήμα 3: Επιλογή και μετονομασία στηλών ---
+columns_map = {
+    "VariationID": "VariationID",
+    "GeneSymbol": "GeneSymbol",
+    "Protein_change": "ProteinChange",
+    "ClinicalSignificance": "ClinicalSignificance",
+    "ReviewStatus": "ReviewStatus",
+    "Name": "condition",
+    "Type": "variant type",
+    "PhenotypeIDS": "phenotypes",
+    "HGVS_c": "dna_change",
+    "HGVS_p": "protein_change",
+    "Chromosome": "Chromosome",
+    "Start": "Start",
+    "Stop": "Stop"
+}
+
+# Κράτησε όσες υπάρχουν
+available = {k: v for k, v in columns_map.items() if k in df.columns}
+df = df[list(available.keys())].rename(columns=available)
+
+# --- Βήμα 4: Δημιουργία στήλης position ---
+df["position"] = df["Chromosome"].astype(str) + ":" + df["Start"].astype(str) + "-" + df["Stop"].astype(str)
+
+# --- Βήμα 5: Rearrangement στήλες ---
+final_columns = [
+    "VariationID", "GeneSymbol", "ProteinChange", "ClinicalSignificance", "ReviewStatus",
+    "position", "condition", "variant type", "phenotypes", "dna_change", "protein_change"
+]
+
+# Καλύπτει περιπτώσεις απουσίας κάποιων στηλών
+for col in final_columns:
+    if col not in df.columns:
+        df[col] = ""
+
+df = df[final_columns]
+
+# --- Βήμα 6: Αποθήκευση σε CSV ---
+output_csv = "BRCA1_variants.csv"
+df.to_csv(output_csv, index=False)
+
+print(f"Έτοιμο! Το αρχείο αποθηκεύτηκε ως: {output_csv}")
+
+
+APOTELESMA
+VariationID,GeneSymbol,ProteinChange,ClinicalSignificance,ReviewStatus,
+position,condition,variant type,phenotypes,dna_change,protein_change
+

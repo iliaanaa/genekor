@@ -1,0 +1,127 @@
+2. Παράδειγμα Αίτησης: GET /variants/PS1
+Α) Τι Κάνει το Αίτημα:
+Ζητάει όλες τις μεταλλάξεις που ικανοποιούν το κριτήριο ACMG PS1.
+
+Το PS1 ελέγχει αν μια μετάλλαξη έχει ίδιο amino acid change με γνωστό pathogenic variant, αλλά διαφορετικό DNA change.
+
+Β) Προετοιμασία Δεδομένων (CSV Structure):
+Το αρχείο brca_acmg_variants.csv πρέπει να έχει μια στήλη acmg_criteria που περιέχει λίστες με τα κριτήρια.
+Παράδειγμα:
+
+variant_id	gene	protein_change	dna_change	acmg_criteria
+1	BRCA1	p.Arg504Gly	c.1510A>G	["PS1", "PP5"]
+2	BRCA1	p.Trp41*	c.123G>A	["PM5"]
+Σημείωση: Αν η στήλη acmg_criteria είναι string αντί για λίστα, χρησιμοποιήστε:
+
+
+import ast
+df['acmg_criteria'] = df['acmg_criteria'].apply(ast.literal_eval)
+
+
+Γ) Απόκριση του API:
+Η απόκριση θα είναι ένα JSON object με:
+
+Το κριτήριο που ζητήθηκε (PS1).
+
+Το πλήθος των μεταλλάξεων που το ικανοποιούν (count).
+
+Λίστα με τις μεταλλάξεις (variants).
+
+Παράδειγμα Απάντησης:
+
+json
+{
+  "criterion": "PS1",
+  "count": 1,
+  "variants": [
+    {
+      "variant_id": 1,
+      "gene": "BRCA1",
+      "protein_change": "p.Arg504Gly",
+      "dna_change": "c.1510A>G",
+      "acmg_criteria": ["PS1", "PP5"]
+    }
+  ]
+}
+3. Βήματα Εκτέλεσης
+Εκκίνηση του FastAPI:
+
+
+uvicorn main:app --reload
+Το API θα είναι διαθέσιμο στο http://localhost:8000.
+
+Αποστολή Αίτησης:
+
+Χρησιμοποιήστε έναν browser ή το curl:
+
+
+curl "http://localhost:8000/variants/PS1"
+Ή χρησιμοποιήστε το Swagger UI (http://localhost:8000/docs).
+
+4. Ανάλυση της Λογικής Φιλτραρίσματος
+Για το PS1:
+Το endpoint ψάχνει στη στήλη acmg_criteria για εγγραφές που περιέχουν τη συμβολοσειρά "PS1".
+
+Αν το CSV περιέχει τη γραμμή ["PS1", "PP5"], θα ταιριάξει.
+
+Για Άλλα Κριτήρια:
+Για PM5: GET /variants/PM5 → θα επιστρέψει μεταλλάξεις με "PM5" στη λίστα acmg_criteria.
+
+5. Προβλήματα & Λύσεις
+Α) Κενή Απάντηση:
+Αν το count είναι 0, ελέγξτε ότι:
+
+Το κριτήριο υπάρχει στο CSV (π.χ., "PS1" αντί για "PS-1").
+
+Η στήλη acmg_criteria είναι τύπου λίστα (όχι string).
+
+Β) Σφάλματα CSV:
+Αν το CSV δεν φορτώνεται, ελέγξτε ότι:
+
+Το αρχείο υπάρχει στον ίδιο φάκελο με το script.
+
+Οι στήλες έχουν τα σωστά ονόματα (acmg_criteria).
+
+6. Επεκτασιμότητα
+Προσθήκη Περισσότερων Πληροφοριών:
+Επεκτείνετε το endpoint για να επιστρέφει και άλλα πεδία (π.χ., clinical_significance):
+
+
+@app.get("/variants/{criterion}")
+def get_variants(criterion: str):
+    results = df[df['acmg_criteria'].apply(lambda x: criterion in x)]
+    return {
+        "criterion": criterion,
+        "count": len(results),
+        "variants": results[['variant_id', 'gene', 'clinical_significance']].to_dict(orient='records')
+    }
+Συμπέρασμα
+Αυτό το endpoint:
+
+Είναι εύκολα προσαρμόσιμο για διαφορετικά κριτήρια ACMG.
+
+Επιστρέφει δομημένα δεδομένα σε JSON μορφή.
+
+Μπορεί να χρησιμοποιηθεί για έρευνα ή κλινική ανάλυση.
+
+Για πλήρη λειτουργία, φροντίστε να έχετε ένα σωστά μορφοποιημένο CSV και τις απαραίτητες βιβλιοθήκες (fastapi, pandas).
+
+Δομή API Response
+{
+  "criterion": "PS1",
+  "count": 1,
+  "variants": [
+    {
+      "variant_id": 1,
+      "gene": "BRCA1",
+      "protein_change": "p.Arg504Gly",
+      "dna_change": "c.1510A>G",
+      "acmg_criteria": ["PS1", "PP5"],
+      "clinical_significance": "Pathogenic",
+      "review_status": "Expert panel"
+    }
+  ]
+}
+
+
+http://localhost:8000/variant_info/p.Cys61Gly
