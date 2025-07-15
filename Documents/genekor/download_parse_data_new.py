@@ -259,7 +259,7 @@ def main():
         variant_file = variant_gz.replace(".gz", "")
         submission_file = submission_gz.replace(".gz", "")
         
-        df_final = process_clinvar_data(variant_file, submission_file)
+        df_final = process_clinvar_data(variant_file)
         
         # Εισαγωγή στη βάση
         insert_to_database(conn, df_final)
