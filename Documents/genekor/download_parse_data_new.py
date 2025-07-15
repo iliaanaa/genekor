@@ -15,7 +15,7 @@ CLINVAR_SUBMISSION_URL = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited
 GENE_FILTER = "BRCA1"
 ASSEMBLY_FILTER = "GRCh38"  #Επιλέγει την έκδοση GRCh38 του γονιδιώματος
 
-# --- Ρυθμίσεις Βάσης Δεδομένων ---
+#Ρυθμίσεις Βάσης Δεδομένων
 DB_CONFIG = {
     "dbname": "clinvar_db",
     "user": "postgres",
@@ -24,7 +24,7 @@ DB_CONFIG = {
     "port": 5432
 }
 
-# --- Βοηθητικές Συναρτήσεις ---
+#Βοηθητικές Συναρτήσεις
 def download_file(url: str, output_path: str) -> None:
     """Κατέβασμα και αποσυμπίεση αρχείου"""
     print(f"Κατέβασμα {url}...")
@@ -64,7 +64,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
         """)
         conn.commit()
 
-# --- Λογική ACMG Criteria ---
+#ACMG Criteria
 def apply_acmg_criteria(row: pd.Series) -> List[str]:
     """Υπολογισμός κριτηρίων ACMG για μια μετάλλαξη"""
     criteria = []
@@ -86,7 +86,6 @@ def apply_acmg_criteria(row: pd.Series) -> List[str]:
         if row['HGVS_c'] != known_pathogenic[row['HGVS_p']]['dna']:
             criteria.append("PS1")
     
-    # Προσθέστε εδώ άλλα κριτήρια (PM5, PP5, κλπ)
         # PM5
     protein_pos = int(''.join(filter(str.isdigit, row['ProteinChange']))) if pd.notna(row['ProteinChange']) else None
     if protein_pos in pathogenic_positions and row['ProteinChange'] not in known_pathogenic:
@@ -102,72 +101,7 @@ def apply_acmg_criteria(row: pd.Series) -> List[str]:
     
     return criteria
 
-# --- Επεξεργασία Δεδομένων ---
-def process_clinvar_data(variant_path: str, submission_path: str) -> pd.DataFrame:
-    """Φόρτωση και επεξεργασία δεδομένων ClinVar με λεπτομερή conflicting interpretations"""
-    # Φόρτωση variant data
-    df_variants = pd.read_csv(variant_path, sep='\t', low_memory=False)
-    
-    # Φιλτράρισμα για BRCA1 και συγκεκριμένο assembly
-    df_brca = df_variants[
-        (df_variants['GeneSymbol'] == GENE_FILTER) & 
-        (df_variants['Assembly'] == ASSEMBLY_FILTER)
-    ].copy()
-    
-    # Επιλογή στηλών
-    columns_to_keep = [
-        'VariationID', 'GeneSymbol', 'HGVS_c', 'HGVS_p', 
-        'ClinicalSignificance', 'ReviewStatus', 'PhenotypeList',
-        'Assembly', 'Chromosome', 'Start', 'Stop',
-        'ReferenceAllele', 'AlternateAllele', 'RCVaccession',
-        'NumberSubmitters'
-    ]
-    df_brca = df_brca[columns_to_keep]
-    
-    # Φόρτωση submission data - περιέχει τις μεμονωμένες υποβολές
-    df_submissions = pd.read_csv(submission_path, sep='\t')
-    
-    # Τυποποίηση κλινικής σημασίας για τις υποβολές
-    significance_map = {
-        'Pathogenic': 'Pathogenic',
-        'Likely pathogenic': 'Likely_pathogenic',
-        'Benign': 'Benign',
-        'Likely benign': 'Likely_benign',
-        'Uncertain significance': 'VUS',
-        'Conflicting interpretations of pathogenicity': 'Conflicting'
-    }
-    
-    # Καθαρισμός των δεδομένων υποβολής
-    df_submissions['ClinicalSignificance'] = (
-        df_submissions['ClinicalSignificance']
-        .str.split('(')
-        .str[0]
-        .str.strip()
-        .map(significance_map)
-    )
-    
-    # Ομαδοποίηση των υποβολών ανά VariationID για conflicting interpretations
-    conflicting_data = df_submissions.groupby('VariationID').apply(
-        lambda x: {
-            'total_submissions': len(x),
-            'interpretations': x['ClinicalSignificance'].value_counts().to_dict(),
-            'submitters': x[['Submitter', 'ClinicalSignificance']]
-                .rename(columns={'ClinicalSignificance': 'interpretation'})
-                .to_dict('records')
-        }
-    )
-    
-    # Τυποποίηση της κύριας κλινικής σημασίας (συνολικής)
-    df_brca['ClinicalSignificance'] = (
-        df_brca['ClinicalSignificance']
-        .str.split('(')
-        .str[0]
-        .str.strip()
-        .map(significance_map)
-    )
-    
-    # Προσθήκη των conflicting interpretations στο κύριο dataframe
-    df_brca['conflicting_interpretations'] = df_brca['VariationID'].map(conflicting_data)
+
     
     # Υπολογισμός του βαθμού σύγκλισης/διαφωνίας
     def calculate_conflict_score(conflict_data):
@@ -195,7 +129,7 @@ def process_clinvar_data(variant_path: str, submission_path: str) -> pd.DataFram
     
     return df_brca
 
-# --- Εισαγωγή στη Βάση ---
+#Εισαγωγή στη Βάση
 def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -> None:
     """Εισαγωγή δεδομένων στη βάση"""
     with conn.cursor() as cur:
