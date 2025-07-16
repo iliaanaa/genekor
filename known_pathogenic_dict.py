@@ -26,7 +26,7 @@ for row in brca1_variants:
             if key in known_pathogenic:
                 print(f"Warning: Duplicate key '{key}' encountered.")
 			known_pathogenic[key] = {
-                "Clinical Significance": clinical_significance,
-                "HGVS_c": hgvs_c,
-                "HGVS_p": hgvs_p or "N/A"
+                		"Clinical Significance": clinical_significance,
+                		"HGVS_c": hgvs_c,
+                		"HGVS_p": hgvs_p or "N/A"
 			}
