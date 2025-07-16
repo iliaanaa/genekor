@@ -1,3 +1,6 @@
+# SOS
+στην συναρτηση def process_clinvar_data(variant_path: str, submisssion_path: str) -> pd.DataFrame: να γινει το submission_path optional??
+
 # ΡΥΘΜΙΣΕΙΣ
 CLINVAR_VARIANT_URL = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz"
 CLINVAR_SUBMISSION_URL = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/submission_summary.txt.gz"

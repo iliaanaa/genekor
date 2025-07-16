@@ -59,6 +59,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
             conflicting_interpretations JSONB,
             rcv_accessions TEXT[],
             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            transcript_id TEXT,
             last_evaluated DATE
         );
         """)
@@ -140,7 +141,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 clinical_significance, review_status, phenotype_list,
                 assembly, chromosome, start_pos, end_pos,
                 reference_allele, alternate_allele, acmg_criteria,
-                conflicting_interpretations, rcv_accessions
+                conflicting_interpretations, rcv_accessions, transcript_id
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
@@ -160,6 +161,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 acmg_criteria = EXCLUDED.acmg_criteria,
                 conflicting_interpretations = EXCLUDED.conflicting_interpretations,
                 rcv_accessions = EXCLUDED.rcv_accessions,
+                transcript_id = EXCLUDED.transcript_id,
                 last_updated = CURRENT_TIMESTAMP;
             """, (
                 row['VariationID'], row['GeneSymbol'], row['HGVS_c'],
@@ -171,6 +173,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 row['rcv_accessions']
             ))
         conn.commit()
+    
 
 
 def categorize_variant_name(name: str) -> dict:
@@ -252,7 +255,7 @@ def main():
         variant_gz = "variant_summary.txt.gz"
         submission_gz = "submission_summary.txt.gz"
         
-        download_file(CLINVAR_VARIANT_URL, variant_gz)
+        download_file(CLINVAR_VARIANT_URL, variant_gz)  
         download_file(CLINVAR_SUBMISSION_URL, submission_gz)
         
         # Επεξεργασία δεδομένων
