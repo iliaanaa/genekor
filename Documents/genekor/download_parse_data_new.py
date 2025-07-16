@@ -45,6 +45,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
             variation_id BIGINT PRIMARY KEY,
             gene_symbol TEXT NOT NULL,
             transcript_id TEXT,
+            morecular consequence TEXT,
             hgvs_c TEXT,
             hgvs_p TEXT,
             clinical_significance TEXT,
@@ -150,6 +151,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 gene_symbol = EXCLUDED.gene_symbol,
                 hgvs_c = EXCLUDED.hgvs_c,
                 hgvs_p = EXCLUDED.hgvs_p,
+                morecular_consequence = EXCLUDED.variant_type,
                 clinical_significance = EXCLUDED.clinical_significance,
                 review_status = EXCLUDED.review_status,
                 phenotype_list = EXCLUDED.phenotype_list,
@@ -165,7 +167,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 transcript_id = EXCLUDED.transcript_id,
                 last_updated = CURRENT_TIMESTAMP;
             """, (
-                row['VariationID'], row['GeneSymbol'],row['transcript_id'], row['HGVS_c'],
+                row['VariationID'], row['GeneSymbol'],row['transcript_id'], row['morecular_consequence'], row['HGVS_c'],
                 row['HGVS_p'], row['ClinicalSignificance'], row['ReviewStatus'],
                 row['PhenotypeList'], row['Assembly'], row['Chromosome'],
                 row['Start'], row['Stop'], row['ReferenceAllele'],
@@ -236,6 +238,7 @@ def process_clinvar_data(variant_path: str) -> pd.DataFrame:
     # Δημιουργία νέων στηλών
     df_brca['Variant_type'] = df_brca['VariantName_analysis'].apply(lambda x: x['variant_type'])
     df_brca['transcript_id'] = df_brca['Name'].apply(extract_transcript_id)
+    df_brca['variant_type'] = df_brca.apply(lambda row: determine_variant_type(row['HGVS_p'], row['HGVS_c']), axis=1)
     df_brca['DNA_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['DNA_variant'])
     df_brca['Protein_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Protein_variant'])
     df_brca['Other_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Other_variant'])
@@ -270,6 +273,48 @@ NM_ - Ταιριάζει ακριβώς το πρόθεμα των RefSeq mRNA t
 
 (?=[(]) - Positive lookahead: Πρέπει να ακολουθείται από (
 '''
+
+def determine_variant_type(hgvs_p: str, hgvs_c: str) -> str:
+    """
+    Καθορίζει τον τύπο της μετάλλαξης βάσει των HGVS προσδιορισμών.
+    Επιστρέφει ένα από:
+    - frameshift, nonsense, deletion, duplication, insertion,
+    - missense, synonymous, protein_other,
+    - splice_site_essential, splice_region, 5'UTR, 3'UTR, non_coding
+    - unknown
+    """
+    if pd.notna(hgvs_p) and isinstance(hgvs_p, str):
+        hgvs_p = hgvs_p.strip()
+        if "fs" in hgvs_p:
+            return "frameshift"
+        elif "*" in hgvs_p:
+            return "nonsense"
+        elif "del" in hgvs_p:
+            return "deletion"
+        elif "dup" in hgvs_p:
+            return "duplication"
+        elif "ins" in hgvs_p:
+            return "insertion"
+        elif hgvs_p == "p.=":
+            return "synonymous"
+        elif re.match(r"p\.[A-Z][a-z]{2}\d+[A-Z][a-z]{2}", hgvs_p):
+            return "missense"
+        else:
+            return "protein_other"
+    
+    if pd.notna(hgvs_c) and isinstance(hgvs_c, str):
+        hgvs_c = hgvs_c.strip()
+        if re.search(r"\+\d+|\-\d+", hgvs_c):
+            if re.search(r"\+1\+2|\-1\-2", hgvs_c):
+                return "splice_site_essential"
+            else:
+                return "splice_region"
+        elif hgvs_c.startswith("c.-"):
+            return "5'UTR"
+        elif "*" in hgvs_c:
+            return "3'UTR"
+    
+    return "unknown"
 
 # --- Κύρια Λειτουργία ---
 def main():
