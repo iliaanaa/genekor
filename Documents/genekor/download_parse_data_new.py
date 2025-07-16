@@ -44,6 +44,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
         CREATE TABLE IF NOT EXISTS brca1_variants (
             variation_id BIGINT PRIMARY KEY,
             gene_symbol TEXT NOT NULL,
+            transcript_id TEXT,
             hgvs_c TEXT,
             hgvs_p TEXT,
             clinical_significance TEXT,
@@ -137,7 +138,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
         for _, row in df.iterrows():
             cur.execute("""
             INSERT INTO brca1_variants (
-                variation_id, gene_symbol, hgvs_c, hgvs_p,
+                variation_id, gene_symbol,transcript_id, hgvs_c, hgvs_p,
                 clinical_significance, review_status, phenotype_list,
                 assembly, chromosome, start_pos, end_pos,
                 reference_allele, alternate_allele, acmg_criteria,
@@ -164,7 +165,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 transcript_id = EXCLUDED.transcript_id,
                 last_updated = CURRENT_TIMESTAMP;
             """, (
-                row['VariationID'], row['GeneSymbol'], row['HGVS_c'],
+                row['VariationID'], row['GeneSymbol'],row['transcript_id'], row['HGVS_c'],
                 row['HGVS_p'], row['ClinicalSignificance'], row['ReviewStatus'],
                 row['PhenotypeList'], row['Assembly'], row['Chromosome'],
                 row['Start'], row['Stop'], row['ReferenceAllele'],
@@ -234,6 +235,7 @@ def process_clinvar_data(variant_path: str) -> pd.DataFrame:
     
     # Δημιουργία νέων στηλών
     df_brca['Variant_type'] = df_brca['VariantName_analysis'].apply(lambda x: x['variant_type'])
+    df_brca['transcript_id'] = df_brca['Name'].apply(extract_transcript_id)
     df_brca['DNA_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['DNA_variant'])
     df_brca['Protein_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Protein_variant'])
     df_brca['Other_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Other_variant'])
@@ -243,6 +245,31 @@ def process_clinvar_data(variant_path: str) -> pd.DataFrame:
     
     return df_brca
 
+def extract_transcript_id(name: str)->str:
+    if pd.isna(name) or not isinstance(name,str):
+        return None
+    
+    transcript_pattern=re.compile(r'(?<!\w)(NM_\d{5,}(?:\.\d{1,2})?)(?=[(])')
+
+    match = transcript_pattern.search(name)
+    
+    return match.group(1) if match else None
+
+    '''
+    (?<!\w) - Negative lookbehind: Βεβαιώνεται ότι δεν υπάρχει word character πριν
+
+([NXY]M_\d{5,}(?:\.\d{1,2})?) - Κύρια ομάδα:
+
+(?<!\w) Negative lookbehind: Βεβαιώνεται ότι το NM_ δεν προηγείται από άλλο word character (π.χ. γράμμα, αριθμό ή _).
+
+NM_ - Ταιριάζει ακριβώς το πρόθεμα των RefSeq mRNA transcripts.
+
+\d{5,} - Τουλάχιστον 5 ψηφία (οι πραγματικοί αριθμοί transcript είναι συνήθως 5-6 ψηφία)
+
+(?:\.\d{1,2})? - Προαιρετική έκδοση (1-2 ψηφία)
+
+(?=[(]) - Positive lookahead: Πρέπει να ακολουθείται από (
+'''
 
 # --- Κύρια Λειτουργία ---
 def main():
