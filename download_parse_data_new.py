@@ -89,7 +89,7 @@ def apply_acmg_criteria(row: pd.Series) -> List[str]:
             criteria.append("PS1")
     
         # PM5
-    protein_pos = int(''.join(filter(str.isdigit, row['ProteinChange']))) if pd.notna(row['ProteinChange']) else None
+    protein_pos = int(''.join(filter(str.isdigit, row['ProteinVariant']))) if pd.notna(row['ProteinVariant']) else None
     if protein_pos in pathogenic_positions and row['ProteinChange'] not in known_pathogenic:
         criteria.append('PM5')
     
@@ -142,9 +142,9 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 clinical_significance, review_status, phenotype_list,
                 assembly, chromosome, start_pos, end_pos,
                 reference_allele, alternate_allele, acmg_criteria,
-                conflicting_interpretations, rcv_accessions, transcript_id
+                conflicting_interpretations, rcv_accessions,    
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             ON CONFLICT (variation_id) DO UPDATE SET
                 gene_symbol = EXCLUDED.gene_symbol,
@@ -179,7 +179,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
 
 
 def categorize_variant_name(name: str) -> dict:
-    """ 
+    """
     Κατηγοριοποιεί το όνομα μετάλλαξης από το πεδίο 'Name' του ClinVar
     σε μεταλλάξεις DNA (c.), πρωτεΐνης (p.) και άλλους τύπους
     """
