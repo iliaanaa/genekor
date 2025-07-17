@@ -1,3 +1,18 @@
+import os
+import requests
+import xml.etree.ElementTree as ET
+import pandas as pd
+import psycopg2
+from io import BytesIO
+import gzip
+from datetime import datetime, timedelta
+import time
+import shutil
+import argparse
+import json
+from typing import Optional, Dict, Union
+
+
 CLINVAR_README_URL = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/README.txt"
 METADATA_DIR = "metadata"
 METADATA_FILE = os.path.join(METADATA_DIR, "clinvar_metadata.json")
