@@ -179,7 +179,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
 
 
 def categorize_variant_name(name: str) -> dict:
-    """
+    """ 
     Κατηγοριοποιεί το όνομα μετάλλαξης από το πεδίο 'Name' του ClinVar
     σε μεταλλάξεις DNA (c.), πρωτεΐνης (p.) και άλλους τύπους
     """

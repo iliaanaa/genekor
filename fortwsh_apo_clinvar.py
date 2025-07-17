@@ -4,4 +4,4 @@ import pandas as pd
 df = pd.read_csv('variant_summary.txt', sep='\t', low_memory=False)
 
 # Φιλτράρισμα για BRCA1/2
-df_brca = df[df['GeneSymbol'].isin(['BRCA1', 'BRCA2'])]
+df_brca = df[df['GeneSymbol'].isin(['BRCA1',  'BRCA2'])]

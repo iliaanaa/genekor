@@ -81,17 +81,3 @@ rcv_accessions: array από accession strings
 # insert_to_database(conn, df)
 Κάνει INSERT ... ON CONFLICT UPDATE ώστε να ενημερώνει εγγραφές αν υπάρχει ήδη το variation_id.
 
-# main()
-Ο κορμός:
-
-Συνδέεται με βάση.
-
-Κατεβάζει και αποσυμπιέζει αρχεία.
-
-Εκτελεί process_clinvar_data().
-
-Εισάγει δεδομένα με insert_to_database().
-
-Διαγράφει προσωρινά αρχεία.
-
-Κλείνει σύνδεση.
