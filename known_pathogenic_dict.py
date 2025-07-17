@@ -24,9 +24,10 @@ with open(INPUT_FILE, "r", encoding = "utf-8") as infile:
         		codon = None
         
         		# Extract codon number if HGVS_p is available and matches typical format.
-       			codon_match = re.search(r"[A-Za-z]{3}(\d+)[A-Za-z]{3}", hgvs_p)
-        		if codon_match:
-            			codon = codon_match.group(1)
+			if hgvs_p:
+       				codon_match = re.search(r"[A-Za-z]{3}(\d+)[A-Za-z]{3}", hgvs_p)
+        			if codon_match:
+            				codon = codon_match.group(1)
             
 			if key:
             			if key in known_pathogenic:
@@ -34,5 +35,6 @@ with open(INPUT_FILE, "r", encoding = "utf-8") as infile:
 				known_pathogenic[key] = {
                 			"Clinical Significance": clinical_significance,
                 			"HGVS_c": hgvs_c,
-                			"HGVS_p": hgvs_p or "N/A"
+                			"HGVS_p": hgvs_p or "N/A",
+					"codon": codon
 				}
