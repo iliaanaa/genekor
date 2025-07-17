@@ -12,14 +12,14 @@ from typing import Dict, List, Optional
 # --- Ρυθμίσεις ---
 CLINVAR_VARIANT_URL = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz"
 CLINVAR_SUBMISSION_URL = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/submission_summary.txt.gz" #μορφή gzip
-GENE_FILTER = "BRCA1"
+GENE_FILTER = "KLHL10"
 ASSEMBLY_FILTER = "GRCh38"  #Επιλέγει την έκδοση GRCh38 του γονιδιώματος
 
 #Ρυθμίσεις Βάσης Δεδομένων
 DB_CONFIG = {
     "dbname": "clinvar_db",
-    "user": "postgres",
-    "password": "your_password",
+    "user": "ilianam",
+    "password": "wasd1029!",
     "host": "localhost",
     "port": 5432
 }
@@ -45,7 +45,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
             variation_id BIGINT PRIMARY KEY,
             gene_symbol TEXT NOT NULL,
             transcript_id TEXT,
-            morecular consequence TEXT,
+            morecular_consequence TEXT,
             hgvs_c TEXT,
             hgvs_p TEXT,
             clinical_significance TEXT,
@@ -61,7 +61,6 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
             conflicting_interpretations JSONB,
             rcv_accessions TEXT[],
             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            transcript_id TEXT,
             last_evaluated DATE
         );
         """)
