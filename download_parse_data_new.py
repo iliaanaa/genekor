@@ -3,6 +3,7 @@ import psycopg2
 import os
 import re
 import gzip
+import subprocess
 import shutil
 import urllib.request
 import json
@@ -176,7 +177,55 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
             ))
         conn.commit()
     
+def extract_HGVS(name: str) -> dict:
+    """
+    Εξάγει HGVS.c και HGVS.p από το πεδίο name χρησιμοποιώντας τα συγκεκριμένα regex patterns
+    """
+    result = {
+        'HGVS_c': None,
+        'HGVS_p': None,
+    }
+    
+    if not pd.isna(name) and isinstance(name, str):
+        dna_pattern = re.compile(r'(c\.[^*\s]+)')  # DNA μεταλλάξεις (c.) χωρίς *
+        dna_star_pattern = re.compile(r'(c\.\*[\d_]+[^\s)]*)')  # DNA μεταλλάξεις με * (π.χ. c.*103_*106del)
+        protein_pattern = re.compile(r'(p\.[^\s)]+)')  # Πρωτεϊνικές μεταλλάξεις (p.)
+        
+        # Αναζήτηση για DNA μεταλλάξεις
+        dna_match = dna_pattern.search(name)
+        dna_star_match = dna_star_pattern.search(name)
+        
+        if dna_match:
+            result['HGVS_c'] = dna_match.group(1)
+        elif dna_star_match:
+            result['HGVS_c'] = dna_star_match.group(1)
+        
+        # Αναζήτηση για πρωτεϊνικές μεταλλάξεις
+        protein_match = protein_pattern.search(name)
+        if protein_match:
+            result['HGVS_p'] = protein_match.group(1)
+    
+    return result
 
+# Παράδειγμα DataFrame (βάλε το δικό σου)
+df = pd.DataFrame({
+    'Name': [
+        'c.123A>T',
+        'p.Arg117His',
+        'c.*103_*106del',
+        'p.Gly12Asp c.35G>A',
+        'unknown_variant',
+        None
+    ]
+})
+
+# Εφαρμογή συνάρτησης και προσθήκη στηλών
+df_HGVS = df['Name'].apply(extract_HGVS).apply(pd.Series)
+df = pd.concat([df, df_HGVS], axis=1)
+
+print(df)
+
+'''
 
 def categorize_variant_name(name: str) -> dict:
     """
@@ -219,7 +268,8 @@ def categorize_variant_name(name: str) -> dict:
             result['Other_variant'] = name
     
     return result
-
+'''
+'''
 def process_clinvar_data(variant_path: str) -> pd.DataFrame:
     """
     Ολοκληρωμένη συνάρτηση επεξεργασίας δεδομένων ClinVar
@@ -246,6 +296,90 @@ def process_clinvar_data(variant_path: str) -> pd.DataFrame:
     df_brca.drop(columns=['VariantName_analysis'], inplace=True)
     
     return df_brca
+    '''
+
+#######################################################
+'''
+def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
+    """
+    Επεξεργασία δεδομένων ClinVar ΑΜΕΣΑ από το .gz αρχείο,
+    χωρίς πλήρη αποσυμπίεση. Χρησιμοποιεί zcat και grep.
+    """
+
+    print("Φόρτωση όλων των δεδομένων από το gzip...")
+    with gzip.open(variant_gz_path, 'rt') as f:
+        df = pd.read_csv(f, sep='\t', low_memory=False)
+
+    
+    # 1. Φιλτράρισμα για γονίδιο KLHL10 και GRCh38 με grep
+    print("Φιλτράρισμα δεδομένων με grep...")
+    grep_cmd = f"zcat {variant_gz_path} | grep -E 'KLHL10.*GRCh38' > filtered_variants.tsv"
+    subprocess.run(grep_cmd, shell=True, check=True)
+    
+    # 2. Φόρτωση ΜΟΝΟ των φιλτραρισμένων δεδομένων
+    print("Φόρτωση φιλτραρισμένων δεδομένων...")
+    df = pd.read_csv("filtered_variants.tsv", sep='\t', low_memory=False)
+    
+    # 3. Κατηγοριοποίηση μεταλλάξεων (όπως πριν)
+    df['VariantName_analysis'] = df['Name'].apply(categorize_variant_name)
+    # Κατηγοριοποίηση μεταλλάξεων βάσει του πεδίου Name
+    df_brca['VariantName_analysis'] = df_brca['Name'].apply(categorize_variant_name)
+    
+    # Δημιουργία νέων στηλών
+    df_brca['Variant_type'] = df_brca['VariantName_analysis'].apply(lambda x: x['variant_type'])
+    df_brca['transcript_id'] = df_brca['Name'].apply(extract_transcript_id)
+    df_brca['variant_type'] = df_brca.apply(lambda row: determine_variant_type(row['HGVS_p'], row['HGVS_c']), axis=1)
+    df_brca['DNA_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['DNA_variant'])
+    df_brca['Protein_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Protein_variant'])
+    df_brca['Other_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Other_variant'])
+    
+    # Αφαίρεση της προσωρινής στήλης ανάλυσης
+    df_brca.drop(columns=['VariantName_analysis'], inplace=True)
+    
+    # 4. Διαγραφή προσωρινού αρχείου
+    os.remove("filtered_variants.tsv")
+    
+    return df
+
+###########################################################################
+    '''
+
+
+def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
+    """
+    Επεξεργασία δεδομένων ClinVar από .gz με zcat και grep (για χαμηλή χρήση μνήμης).
+    Διατηρεί τη γραμμή τίτλων (header).
+    """
+    import subprocess
+
+    print("Φιλτράρισμα δεδομένων με zcat + grep...")
+    
+    # Δημιουργεί προσωρινό αρχείο με header + filtered rows
+    grep_cmd = (
+        f"zcat {variant_gz_path} | head -n 1 > filtered_variants.tsv && "
+        f"zcat {variant_gz_path} | grep -E 'KLHL10.*GRCh38' >> filtered_variants.tsv"
+    )
+    subprocess.run(grep_cmd, shell=True, check=True)
+
+    print("Φόρτωση φιλτραρισμένων δεδομένων...")
+    df = pd.read_csv("filtered_variants.tsv", sep='\t', low_memory=False)
+
+    print("Κατηγοριοποίηση μεταλλάξεων...")
+    df['VariantName_analysis'] = df['Name'].apply(extract_HGVS)
+
+    df['Variant_type'] = df['VariantName_analysis'].apply(lambda x: x['variant_type'])
+    df['transcript_id'] = df['Name'].apply(extract_transcript_id)
+    df['variant_type'] = df.apply(lambda row: determine_variant_type(row['HGVS_p'], row['HGVS_c']), axis=1)
+    df['DNA_variant'] = df['VariantName_analysis'].apply(lambda x: x['DNA_variant'])
+    df['Protein_variant'] = df['VariantName_analysis'].apply(lambda x: x['Protein_variant'])
+    df['Other_variant'] = df['VariantName_analysis'].apply(lambda x: x['Other_variant'])
+
+    df.drop(columns=['VariantName_analysis'], inplace=True)
+
+    # Διαγραφή προσωρινού αρχείου
+    os.remove("filtered_variants.tsv")
+
+    return df
 
 def extract_transcript_id(name: str)->str:
     if pd.isna(name) or not isinstance(name,str):
@@ -315,6 +449,7 @@ def determine_variant_type(hgvs_p: str, hgvs_c: str) -> str:
     
     return "unknown"
 
+'''
 # --- Κύρια Λειτουργία ---
 def main():
     # Σύνδεση στη βάση
@@ -349,7 +484,34 @@ def main():
                 os.remove(f)
         conn.close()
 
+        '''
+
+
+
+
+def main():
+    conn = psycopg2.connect(**DB_CONFIG)
+    create_tables(conn)
+    
+    try:
+        print("Ξεκίνημα script...")  # Για επιβεβαίωση ότι τρέχει
+        # Λήψη αρχείων (ΜΟΝΟ τα .gz, χωρίς αποσυμπίεση)
+        variant_gz = "variant_summary.txt.gz"
+        urllib.request.urlretrieve(CLINVAR_VARIANT_URL, variant_gz)
+        
+        # Επεξεργασία ΑΜΕΣΑ από το .gz
+        df_final = process_clinvar_data(variant_gz)
+        
+        # Εισαγωγή στη βάση
+        insert_to_database(conn, df_final)
+        
+    except Exception as e:
+        print(f"Σφάλμα: {e}")
+    finally:
+        if os.path.exists(variant_gz):
+            os.remove(variant_gz)
+        conn.close()
+
+
 if __name__ == "__main__":
     main()
-
-   
