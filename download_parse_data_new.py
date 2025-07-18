@@ -46,7 +46,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
             variation_id BIGINT PRIMARY KEY,
             gene_symbol TEXT NOT NULL,
             transcript_id TEXT,
-            morecular_consequence TEXT,
+            variant_type TEXT,
             hgvs_c TEXT,
             hgvs_p TEXT,
             clinical_significance TEXT,
@@ -90,8 +90,8 @@ def apply_acmg_criteria(row: pd.Series) -> List[str]:
             criteria.append("PS1")
     
         # PM5
-    protein_pos = int(''.join(filter(str.isdigit, row['ProteinVariant']))) if pd.notna(row['ProteinVariant']) else None
-    if protein_pos in pathogenic_positions and row['ProteinChange'] not in known_pathogenic:
+    protein_pos = int(''.join(filter(str.isdigit, row['HGVS_p']))) if pd.notna(row['HGVS_p']) else None
+    if protein_pos in pathogenic_positions and row['HGVS_p'] not in known_pathogenic:
         criteria.append('PM5')
     
     # PP5/BP6
@@ -151,7 +151,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 gene_symbol = EXCLUDED.gene_symbol,
                 hgvs_c = EXCLUDED.hgvs_c,
                 hgvs_p = EXCLUDED.hgvs_p,
-                morecular_consequence = EXCLUDED.variant_type,
+                variant_type = EXCLUDED.variant_type,
                 clinical_significance = EXCLUDED.clinical_significance,
                 review_status = EXCLUDED.review_status,
                 phenotype_list = EXCLUDED.phenotype_list,
@@ -167,7 +167,7 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 transcript_id = EXCLUDED.transcript_id,
                 last_updated = CURRENT_TIMESTAMP;
             """, (
-                row['VariationID'], row['GeneSymbol'],row['transcript_id'], row['morecular_consequence'], row['HGVS_c'],
+                row['VariationID'], row['GeneSymbol'],row['transcript_id'], row['variant_type'], row['HGVS_c'],
                 row['HGVS_p'], row['ClinicalSignificance'], row['ReviewStatus'],
                 row['PhenotypeList'], row['Assembly'], row['Chromosome'],
                 row['Start'], row['Stop'], row['ReferenceAllele'],
@@ -176,7 +176,8 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 row['rcv_accessions']
             ))
         conn.commit()
-    
+        
+    '''
 def extract_HGVS(name: str) -> dict:
     """
     Εξάγει HGVS.c και HGVS.p από το πεδίο name χρησιμοποιώντας τα συγκεκριμένα regex patterns
@@ -184,6 +185,8 @@ def extract_HGVS(name: str) -> dict:
     result = {
         'HGVS_c': None,
         'HGVS_p': None,
+        'variant_type': None,
+        'Other_variant': None
     }
     
     if not pd.isna(name) and isinstance(name, str):
@@ -204,7 +207,54 @@ def extract_HGVS(name: str) -> dict:
         protein_match = protein_pattern.search(name)
         if protein_match:
             result['HGVS_p'] = protein_match.group(1)
+
+        # Αν δεν βρέθηκε τίποτα από τα παραπάνω
+        if not result['variant_type']:
+            result['variant_type'] = 'Other'
+            result['Other_variant'] = name
+
+    return result
+'''
+def extract_HGVS(name: str) -> dict:
+    """
+    Εξάγει HGVS.c, HGVS.p και variant_type από το πεδίο name χρησιμοποιώντας regex patterns.
+    """
+    result = {
+        'HGVS_c': None,
+        'HGVS_p': None,
+        'variant_type': None,
+        'Other_variant': None
+    }
     
+    if not pd.isna(name) and isinstance(name, str):
+        dna_pattern = re.compile(r'(c\.[^*\s]+)')  # DNA μεταλλάξεις (c.) χωρίς *
+        dna_star_pattern = re.compile(r'(c\.\*[\d_]+[^\s)]*)')  # DNA μεταλλάξεις με * (π.χ. c.*103_*106del)
+        protein_pattern = re.compile(r'(p\.[^\s)]+)')  # Πρωτεϊνικές μεταλλάξεις (p.)
+        
+        # Αναζήτηση για DNA μεταλλάξεις
+        dna_match = dna_pattern.search(name)
+        dna_star_match = dna_star_pattern.search(name)
+        
+        if dna_match:
+            result['HGVS_c'] = dna_match.group(1)
+            result['variant_type'] = 'DNA'
+        elif dna_star_match:
+            result['HGVS_c'] = dna_star_match.group(1)
+            result['variant_type'] = 'DNA'
+        
+        # Αναζήτηση για πρωτεϊνικές μεταλλάξεις
+        protein_match = protein_pattern.search(name)
+        if protein_match:
+            result['HGVS_p'] = protein_match.group(1)
+            # Αν δεν έχει ήδη variant_type DNA, βάλε protein
+            if result['variant_type'] is None:
+                result['variant_type'] = 'Protein'
+        
+        # Αν δεν βρέθηκε ούτε DNA ούτε Protein
+        if result['variant_type'] is None:
+            result['variant_type'] = 'Other'
+            result['Other_variant'] = name
+
     return result
 
 # Παράδειγμα DataFrame (βάλε το δικό σου)
@@ -365,20 +415,31 @@ def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
     df = pd.read_csv("filtered_variants.tsv", sep='\t', low_memory=False)
 
     print("Κατηγοριοποίηση μεταλλάξεων...")
+    '''
     df['VariantName_analysis'] = df['Name'].apply(extract_HGVS)
+    df[['HGVS_c', 'HGVS_p']] = df['VariantName_analysis'].apply(pd.Series)
+    if 'HGVS_p' not in df.columns or 'HGVS_c' not in df.columns:
+        raise ValueError("Λείπουν οι στήλες HGVS_p ή HGVS_c πριν το determine_variant_type.")
 
-    df['Variant_type'] = df['VariantName_analysis'].apply(lambda x: x['variant_type'])
     df['transcript_id'] = df['Name'].apply(extract_transcript_id)
     df['variant_type'] = df.apply(lambda row: determine_variant_type(row['HGVS_p'], row['HGVS_c']), axis=1)
-    df['DNA_variant'] = df['VariantName_analysis'].apply(lambda x: x['DNA_variant'])
-    df['Protein_variant'] = df['VariantName_analysis'].apply(lambda x: x['Protein_variant'])
+    df['HGVS_c'] = df['VariantName_analysis'].apply(lambda x: x['HGVS_c'])
+    df['PHGVS_p'] = df['VariantName_analysis'].apply(lambda x: x['HGVS_p'])
     df['Other_variant'] = df['VariantName_analysis'].apply(lambda x: x['Other_variant'])
 
     df.drop(columns=['VariantName_analysis'], inplace=True)
 
     # Διαγραφή προσωρινού αρχείου
     os.remove("filtered_variants.tsv")
+'''
+    # Εξαγωγή HGVS_c, HGVS_p, variant_type, Other_variant σε μία γραμμή
+    df = pd.concat([df, df['Name'].apply(extract_HGVS).apply(pd.Series)], axis=1)
 
+    # Εξαγωγή transcript ID
+    df['transcript_id'] = df['Name'].apply(extract_transcript_id)
+
+    # Διαγραφή προσωρινού αρχείου
+    os.remove("filtered_variants.tsv")
     return df
 
 def extract_transcript_id(name: str)->str:
@@ -500,8 +561,13 @@ def main():
         urllib.request.urlretrieve(CLINVAR_VARIANT_URL, variant_gz)
         
         # Επεξεργασία ΑΜΕΣΑ από το .gz
+        df_final['Submitter'] = None
         df_final = process_clinvar_data(variant_gz)
+        df_final['acmg_criteria'] = df_final.apply(apply_acmg_criteria, axis=1)
+        df_final['conflicting_interpretations'] = [{} for _ in range(len(df_final))]
+        df_final['rcv_accessions'] = df_final['RCVaccession'].fillna('').apply(lambda x: x.split('|') if x else [])
         
+
         # Εισαγωγή στη βάση
         insert_to_database(conn, df_final)
         
