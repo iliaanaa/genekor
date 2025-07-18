@@ -35,7 +35,7 @@ def download_file(url: str, output_path: str) -> None:
         with gzip.open(output_path, 'rb') as f_in:
             with open(output_path.replace(".gz", ""), 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
-
+#grep h zcat gia na mh skaei
 def create_tables(conn: psycopg2.extensions.connection) -> None:
     """Δημιουργία πινάκων στη βάση"""
     with conn.cursor() as cur:
