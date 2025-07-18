@@ -37,6 +37,6 @@ git push origin branch2-xim
 
 * branch1-iliana → Iliana
 * branch2-xim → Xim
-* branch3-aggeliki → Υaggeliki
+* branch3-aggeliki →aggeliki
 
 
