@@ -7,10 +7,8 @@
 git fetch origin
 git checkout branch-onoma
 ```
-
-```
-
 Παράδειγμα
+```
 git checkout branch2-xim
 ```
 
