@@ -95,13 +95,21 @@ def apply_acmg_criteria(row: pd.Series) -> List[str]:
         criteria.append('PM5')
     
     # PP5/BP6
+
+    submitter = row.get('Submitter', None)
+    if submitter in trusted_submitters:
+        if row['ClinicalSignificance'] == 'Pathogenic':
+            criteria.append('PP5')
+        elif row['ClinicalSignificance'] == 'Benign':
+            criteria.append('BP6')
+
+        '''
     if row['Submitter'] in trusted_submitters:
         if row['ClinicalSignificance'] == 'Pathogenic':
             criteria.append('PP5')
         elif row['ClinicalSignificance'] == 'Benign':
             criteria.append('BP6')
-    
-    
+'''
     return criteria
 
 
@@ -139,16 +147,21 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
         for _, row in df.iterrows():
             cur.execute("""
             INSERT INTO brca1_variants (
-                variation_id, gene_symbol,transcript_id, hgvs_c, hgvs_p,
+                variation_id, gene_symbol, transcript_id, hgvs_c, hgvs_p, variant_type,
                 clinical_significance, review_status, phenotype_list,
                 assembly, chromosome, start_pos, end_pos,
                 reference_allele, alternate_allele, acmg_criteria,
-                conflicting_interpretations, rcv_accessions,    
+                conflicting_interpretations, rcv_accessions
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s
             )
             ON CONFLICT (variation_id) DO UPDATE SET
                 gene_symbol = EXCLUDED.gene_symbol,
+                transcript_id = EXCLUDED.transcript_id,
                 hgvs_c = EXCLUDED.hgvs_c,
                 hgvs_p = EXCLUDED.hgvs_p,
                 variant_type = EXCLUDED.variant_type,
@@ -164,18 +177,16 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
                 acmg_criteria = EXCLUDED.acmg_criteria,
                 conflicting_interpretations = EXCLUDED.conflicting_interpretations,
                 rcv_accessions = EXCLUDED.rcv_accessions,
-                transcript_id = EXCLUDED.transcript_id,
                 last_updated = CURRENT_TIMESTAMP;
             """, (
-                row['VariationID'], row['GeneSymbol'],row['transcript_id'], row['variant_type'], row['HGVS_c'],
-                row['HGVS_p'], row['ClinicalSignificance'], row['ReviewStatus'],
-                row['PhenotypeList'], row['Assembly'], row['Chromosome'],
-                row['Start'], row['Stop'], row['ReferenceAllele'],
-                row['AlternateAllele'], json.dumps(row['acmg_criteria']),
-                json.dumps(row['conflicting_interpretations']),
-                row['rcv_accessions']
+                row['VariationID'], row['GeneSymbol'], row['transcript_id'], row['HGVS_c'], row['HGVS_p'], row['variant_type'],
+                row['ClinicalSignificance'], row['ReviewStatus'], row['PhenotypeList'],
+                row['Assembly'], row['Chromosome'], row['Start'], row['Stop'],
+                row['ReferenceAllele'], row['AlternateAllele'], json.dumps(row['acmg_criteria']),
+                json.dumps(row['conflicting_interpretations']), row['rcv_accessions']
             ))
         conn.commit()
+
         
     '''
 def extract_HGVS(name: str) -> dict:
@@ -561,12 +572,11 @@ def main():
         urllib.request.urlretrieve(CLINVAR_VARIANT_URL, variant_gz)
         
         # Επεξεργασία ΑΜΕΣΑ από το .gz
-        df_final['Submitter'] = None
         df_final = process_clinvar_data(variant_gz)
         df_final['acmg_criteria'] = df_final.apply(apply_acmg_criteria, axis=1)
         df_final['conflicting_interpretations'] = [{} for _ in range(len(df_final))]
         df_final['rcv_accessions'] = df_final['RCVaccession'].fillna('').apply(lambda x: x.split('|') if x else [])
-        
+        df_final['Submitter'] = None
 
         # Εισαγωγή στη βάση
         insert_to_database(conn, df_final)
