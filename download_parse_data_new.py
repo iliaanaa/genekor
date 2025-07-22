@@ -26,7 +26,7 @@ TRUSTED_SUBMITTERS = {'ClinVar', 'ENIGMA'}
 DB_CONFIG = {
     "dbname": "clinvar_db",
     "user": "ilianam",
-    "password": "wasd1029!",
+    "password": "genekor123!",
     "host": "localhost",
     "port": 5432
 }
