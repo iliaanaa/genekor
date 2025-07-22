@@ -1,0 +1,130 @@
+clinvar_db=> SELECT *                   
+FROM gene_variants
+WHERE gene_symbol = 'KLHL10'
+AND molecular_consequence = 'missense' ;
+ variation_id | gene_symbol | transcript_id |  hgvs_c   |   hgvs_p    | molecular_consequence |            clinical_significance             |                    revie
+w_status                     |                          phenotype_list                          | assembly | chromosome | start_pos | end_pos  | reference_allele | alt
+ernate_allele | acmg_criteria | conflicting_interpretations |               rcvaccession               |        last_updated        | last_evaluated 
+--------------+-------------+---------------+-----------+-------------+-----------------------+----------------------------------------------+-------------------------
+-----------------------------+------------------------------------------------------------------+----------+------------+-----------+----------+------------------+----
+--------------+---------------+-----------------------------+------------------------------------------+----------------------------+----------------
+        40008 | KLHL10      | NM_152467.5   | c.647A>C  | p.Gln216Pro | missense              | Benign/Likely benign                         | criteria provided, multi
+ple submitters, no conflicts | Spermatogenic failure 11|not provided                            | GRCh38   | 17         |  41842275 | 41842275 | na               | na 
+              | []            | false                       | {RCV000033135,RCV000957607}              | 2025-07-22 14:21:17.327887 | 
+        40009 | KLHL10      | NM_152467.5   | c.937G>A  | p.Ala313Thr | missense              | Uncertain significance                       | criteria provided, multi
+ple submitters, no conflicts | Spermatogenic failure 11|not provided                            | GRCh38   | 17         |  41845378 | 41845378 | na               | na 
+              | []            | false                       | {RCV000033136,RCV001311886}              | 2025-07-22 14:21:17.327887 | 
+       684736 | KLHL10      | NM_152467.5   | c.242A>T  | p.Asn81Ile  | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | Non-obstructive azoospermia|KLHL10-related disorder              | GRCh38   | 17         |  41841870 | 41841870 | na               | na 
+              | []            | false                       | {RCV000845250,RCV004758731}              | 2025-07-22 14:21:17.327887 | 
+       684737 | KLHL10      | NM_152467.5   | c.887T>C  | p.Ile296Thr | missense              | Conflicting classifications of pathogenicity | criteria provided, confl
+icting classifications       | Non-obstructive azoospermia|not provided|KLHL10-related disorder | GRCh38   | 17         |  41845328 | 41845328 | na               | na 
+              | []            | true                        | {RCV000845252,RCV000950262,RCV003975364} | 2025-07-22 14:21:17.327887 | 
+       996145 | KLHL10      | NM_152467.5   | c.985C>T  | p.Arg329Cys | missense              | Pathogenic                                   | no assertion criteria pr
+ovided                       | Spermatogenic failure 11                                         | GRCh38   | 17         |  41845426 | 41845426 | na               | na 
+              | []            | false                       | {RCV001290435}                           | 2025-07-22 14:21:17.327887 | 
+      1030262 | KLHL10      | NM_152467.5   | c.923T>C  | p.Ile308Thr | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | Spermatogenic failure 11                                         | GRCh38   | 17         |  41845364 | 41845364 | na               | na 
+              | []            | false                       | {RCV001331776}                           | 2025-07-22 14:21:17.327887 | 
+      2222932 | KLHL10      | NM_152467.5   | c.223A>G  | p.Thr75Ala  | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41841851 | 41841851 | na               | na 
+              | []            | false                       | {RCV004090423}                           | 2025-07-22 14:21:17.327887 | 
+      2269025 | KLHL10      | NM_152467.5   | c.859C>T  | p.Arg287Cys | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41845300 | 41845300 | na               | na 
+              | []            | false                       | {RCV004129279}                           | 2025-07-22 14:21:17.327887 | 
+      2363241 | KLHL10      | NM_152467.5   | c.20C>T   | p.Ala7Val   | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41837952 | 41837952 | na               | na 
+              | []            | false                       | {RCV004199396}                           | 2025-07-22 14:21:17.327887 | 
+      2433163 | KLHL10      | NM_152467.5   | c.1014A>C | p.Lys338Asn | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | Spermatogenic failure 11                                         | GRCh38   | 17         |  41845455 | 41845455 | na               | na 
+              | []            | false                       | {RCV003131375}                           | 2025-07-22 14:21:17.327887 | 
+      2487159 | KLHL10      | NM_152467.5   | c.463G>A  | p.Glu155Lys | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41842091 | 41842091 | na               | na 
+              | []            | false                       | {RCV004279246}                           | 2025-07-22 14:21:17.327887 | 
+      2487160 | KLHL10      | NM_152467.5   | c.464A>G  | p.Glu155Gly | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41842092 | 41842092 | na               | na 
+              | []            | false                       | {RCV004279247}                           | 2025-07-22 14:21:17.327887 | 
+      2498704 | KLHL10      | NM_152467.5   | c.304G>A  | p.Val102Met | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not provided                                                     | GRCh38   | 17         |  41841932 | 41841932 | na               | na 
+              | []            | false                       | {RCV003222913}                           | 2025-07-22 14:21:17.327887 | 
+      2512741 | KLHL10      | NM_152467.5   | c.454T>C  | p.Tyr152His | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41842082 | 41842082 | na               | na 
+              | []            | false                       | {RCV004293156}                           | 2025-07-22 14:21:17.327887 | 
+      2521483 | KLHL10      | NM_152467.5   | c.1451C>T | p.Ala484Val | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41847409 | 41847409 | na               | na 
+              | []            | false                       | {RCV004290617}                           | 2025-07-22 14:21:17.327887 | 
+      2534219 | KLHL10      | NM_152467.5   | c.73G>A   | p.Ala25Thr  | missense              | Likely benign                                | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41838005 | 41838005 | na               | na 
+              | []            | false                       | {RCV004310525}                           | 2025-07-22 14:21:17.327887 | 
+      2538252 | KLHL10      | NM_152467.5   | c.1358A>G | p.Tyr453Cys | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41847316 | 41847316 | na               | na 
+              | []            | false                       | {RCV004313315}                           | 2025-07-22 14:21:17.327887 | 
+      2548113 | KLHL10      | NM_152467.5   | c.582G>C  | p.Glu194Asp | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41842210 | 41842210 | na               | na 
+              | []            | false                       | {RCV004319425}                           | 2025-07-22 14:21:17.327887 | 
+      2604557 | KLHL10      | NM_152467.5   | c.1159T>C | p.Phe387Leu | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41845600 | 41845600 | na               | na 
+              | []            | false                       | {RCV004350576}                           | 2025-07-22 14:21:17.327887 | 
+      3024928 | KLHL10      | NM_152467.5   | c.16G>A   | p.Ala6Thr   | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not provided                                                     | GRCh38   | 17         |  41837948 | 41837948 | na               | na 
+              | []            | false                       | {RCV003885804}                           | 2025-07-22 14:21:17.327887 | 
+      3025421 | KLHL10      | NM_152467.5   | c.949A>G  | p.Arg317Gly | missense              | Likely benign                                | criteria provided, singl
+e submitter                  | not provided                                                     | GRCh38   | 17         |  41845390 | 41845390 | na               | na 
+              | []            | false                       | {RCV003886297}                           | 2025-07-22 14:21:17.327887 | 
+      3115467 | KLHL10      | NM_152467.5   | c.1592T>C | p.Val531Ala | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41848072 | 41848072 | na               | na 
+              | []            | false                       | {RCV004406785}                           | 2025-07-22 14:21:17.327887 | 
+      3288884 | KLHL10      | NM_152467.5   | c.433T>C  | p.Cys145Arg | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41842061 | 41842061 | na               | na 
+              | []            | false                       | {RCV004637100}                           | 2025-07-22 14:21:17.327887 | 
+      3288886 | KLHL10      | NM_152467.5   | c.22G>A   | p.Ala8Thr   | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41837954 | 41837954 | na               | na 
+              | []            | false                       | {RCV004637101}                           | 2025-07-22 14:21:17.327887 | 
+      3535004 | KLHL10      | NM_152467.5   | c.1757A>G | p.Asp586Gly | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41848237 | 41848237 | na               | na 
+              | []            | false                       | {RCV004941403}                           | 2025-07-22 14:21:17.327887 | 
+      3535005 | KLHL10      | NM_152467.5   | c.1691G>A | p.Arg564His | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41848171 | 41848171 | na               | na 
+              | []            | false                       | {RCV004941404}                           | 2025-07-22 14:21:17.327887 | 
+      3535006 | KLHL10      | NM_152467.5   | c.874A>G  | p.Ile292Val | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41845315 | 41845315 | na               | na 
+              | []            | false                       | {RCV004941405}                           | 2025-07-22 14:21:17.327887 | 
+      3535007 | KLHL10      | NM_152467.5   | c.1549C>T | p.Arg517Cys | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41848029 | 41848029 | na               | na 
+              | []            | false                       | {RCV004927538}                           | 2025-07-22 14:21:17.327887 | 
+      3864744 | KLHL10      | NM_152467.5   | c.1516A>G | p.Thr506Ala | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41847996 | 41847996 | na               | na 
+              | []            | false                       | {RCV005352756}                           | 2025-07-22 14:21:17.327887 | 
+      3864745 | KLHL10      | NM_152467.5   | c.1219G>A | p.Glu407Lys | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41845660 | 41845660 | na               | na 
+              | []            | false                       | {RCV005368416}                           | 2025-07-22 14:21:17.327887 | 
+      3864746 | KLHL10      | NM_152467.5   | c.1597G>A | p.Gly533Ser | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41848077 | 41848077 | na               | na 
+              | []            | false                       | {RCV005360753}                           | 2025-07-22 14:21:17.327887 | 
+      4044024 | KLHL10      | NM_152467.5   | c.812T>C  | p.Met271Thr | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41845253 | 41845253 | na               | na 
+              | []            | false                       | {RCV005589549}                           | 2025-07-22 14:21:17.327887 | 
+      4044025 | KLHL10      | NM_152467.5   | c.1504C>T | p.Pro502Ser | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41847984 | 41847984 | na               | na 
+              | []            | false                       | {RCV005589550}                           | 2025-07-22 14:21:17.327887 | 
+      4044026 | KLHL10      | NM_152467.5   | c.361A>G  | p.Ile121Val | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41841989 | 41841989 | na               | na 
+              | []            | false                       | {RCV005589551}                           | 2025-07-22 14:21:17.327887 | 
+      4044027 | KLHL10      | NM_152467.5   | c.1585T>A | p.Leu529Met | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41848065 | 41848065 | na               | na 
+              | []            | false                       | {RCV005589552}                           | 2025-07-22 14:21:17.327887 | 
+      4044028 | KLHL10      | NM_152467.5   | c.1629T>A | p.Asn543Lys | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41848109 | 41848109 | na               | na 
+              | []            | false                       | {RCV005589553}                           | 2025-07-22 14:21:17.327887 | 
+      4044029 | KLHL10      | NM_152467.5   | c.362T>C  | p.Ile121Thr | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41841990 | 41841990 | na               | na 
+              | []            | false                       | {RCV005589554}                           | 2025-07-22 14:21:17.327887 | 
+      4044030 | KLHL10      | NM_152467.5   | c.422G>C  | p.Cys141Ser | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41842050 | 41842050 | na               | na 
+              | []            | false                       | {RCV005589555}                           | 2025-07-22 14:21:17.327887 | 
+      4044031 | KLHL10      | NM_152467.5   | c.29C>T   | p.Thr10Ile  | missense              | Uncertain significance                       | criteria provided, singl
+e submitter                  | not specified                                                    | GRCh38   | 17         |  41837961 | 41837961 | na               | na 
+              | []            | false                       | {RCV005589556}                           | 2025-07-22 14:21:17.327887 | 
+(39 rows)
+
+clinvar_db=>  
