@@ -144,23 +144,7 @@ def apply_acmg_criteria(row: pd.Series) -> List[str]:
     df_brca['RCV_accession'] = df_brca['RCVaccession'].str.split('|')
     
     return df_brca
-'''
-def parse_conflict(value):
-    """Μετατροπή conflicting_interpretations σε έγκυρο JSON"""
-    if pd.isna(value):
-        return None
-    if isinstance(value, bool):
-        return [str(value)]
-    if isinstance(value, (list, tuple, set)):
-        return [str(v) for v in value]
-    if isinstance(value, str):
-        return [value]
-    try:
-        return [str(value)]
-    except Exception:
-        return ["unknown"]
 
-'''
 def parse_conflict(val):
     """Παίρνει την τιμή από τη στήλη conflicting_interpretations και επιστρέφει καθαρή λίστα"""
     if isinstance(val, bool):
@@ -190,123 +174,7 @@ def parse_rcv(value):
         return [str(x) for x in loaded] if isinstance(loaded, list) else [str(loaded)]
     except Exception:
         return [str(value)]
-'''
-#Εισαγωγή στη Βάση
-def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -> None:
-    """Εισαγωγή δεδομένων στη βάση"""
-    with conn.cursor() as cur:
-        for _, row in df.iterrows():
-            protein_pos = None if pd.isna(row['protein_pos']) else int(row['protein_pos'])
-            cur.execute("""
-            INSERT INTO gene_variants (
-                variation_id, gene_symbol,transcript_id, molecular_consequence,hgvs_c, hgvs_p,
-                clinical_significance, review_status, phenotype_list,
-                assembly, chromosome, start_pos, end_pos,
-                reference_allele, alternate_allele, acmg_criteria,
-                conflicting_interpretations, RCVaccession, protein_pos
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-            )
-            ON CONFLICT (variation_id) DO UPDATE SET
-                gene_symbol = EXCLUDED.gene_symbol,
-                hgvs_c = EXCLUDED.hgvs_c,
-                hgvs_p = EXCLUDED.hgvs_p,
-                molecular_consequence = EXCLUDED.molecular_consequence,
-                clinical_significance = EXCLUDED.clinical_significance,
-                review_status = EXCLUDED.review_status,
-                phenotype_list = EXCLUDED.phenotype_list,
-                assembly = EXCLUDED.assembly,
-                chromosome = EXCLUDED.chromosome,
-                start_pos = EXCLUDED.start_pos,
-                end_pos = EXCLUDED.end_pos,
-                reference_allele = EXCLUDED.reference_allele,
-                alternate_allele = EXCLUDED.alternate_allele,
-                acmg_criteria = EXCLUDED.acmg_criteria,
-                conflicting_interpretations = EXCLUDED.conflicting_interpretations,
-                RCVaccession = EXCLUDED.RCVaccession,
-                transcript_id = EXCLUDED.transcript_id,
-                last_updated = CURRENT_TIMESTAMP,
-                protein_pos = EXCLUDED.protein_pos;
-            """, (
-                row['VariationID'], row['GeneSymbol'],row['transcript_id'], row['molecular_consequence'], row['HGVS_c'],
-                row['HGVS_p'], row['ClinicalSignificance'], row['ReviewStatus'],
-                row['PhenotypeList'], row['Assembly'], row['Chromosome'],
-                row['Start'], row['Stop'], row['ReferenceAllele'],
-                row['AlternateAllele'], json.dumps(row['acmg_criteria']),
-                json.dumps(row['conflicting_interpretations']),
-                parse_rcv(row['RCVaccession']),row['protein_pos']
 
-            ))
-        conn.commit()
-'''
-'''
-def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -> None:
-    """Εισαγωγή δεδομένων στη βάση"""
-    with conn.cursor() as cur:
-        for index, row in df.iterrows():
-            try:
-                conflict_list = parse_conflict(row.get('conflicting_interpretations'))  
-                cur.execute("""
-                INSERT INTO gene_variants (
-                    variation_id, gene_symbol, transcript_id, molecular_consequence,
-                    hgvs_c, hgvs_p, clinical_significance, review_status, phenotype_list,
-                    assembly, chromosome, start_pos, end_pos,
-                    reference_allele, alternate_allele, acmg_criteria,
-                    conflicting_interpretations, RCVaccession, protein_pos
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                )
-                ON CONFLICT (variation_id) DO UPDATE SET
-                    gene_symbol = EXCLUDED.gene_symbol,
-                    hgvs_c = EXCLUDED.hgvs_c,
-                    hgvs_p = EXCLUDED.hgvs_p,
-                    molecular_consequence = EXCLUDED.molecular_consequence,
-                    clinical_significance = EXCLUDED.clinical_significance,
-                    review_status = EXCLUDED.review_status,
-                    phenotype_list = EXCLUDED.phenotype_list,
-                    assembly = EXCLUDED.assembly,
-                    chromosome = EXCLUDED.chromosome,
-                    start_pos = EXCLUDED.start_pos,
-                    end_pos = EXCLUDED.end_pos,
-                    reference_allele = EXCLUDED.reference_allele,
-                    alternate_allele = EXCLUDED.alternate_allele,
-                    acmg_criteria = EXCLUDED.acmg_criteria,
-                    conflicting_interpretations = EXCLUDED.conflicting_interpretations,
-                    RCVaccession = EXCLUDED.RCVaccession,
-                    transcript_id = EXCLUDED.transcript_id,
-                    last_updated = CURRENT_TIMESTAMP,
-                    protein_pos = EXCLUDED.protein_pos;
-                """, (
-                    row['VariationID'],
-                    row['GeneSymbol'],
-                    row['transcript_id'],
-                    row['molecular_consequence'],
-                    row['HGVS_c'],
-                    row['HGVS_p'],
-                    row['ClinicalSignificance'],
-                    row['ReviewStatus'],
-                    row['PhenotypeList'],
-                    row['Assembly'],
-                    row['Chromosome'],
-                    row['Start'],
-                    row['Stop'],
-                    row['ReferenceAllele'],
-                    row['AlternateAllele'],
-                    json.dumps(row['acmg_criteria']),
-                    json.dumps(conflict_list),  
-                    row['RCVaccession'],
-                    row['protein_pos']
-                ))
-            except Exception as e:
-                print(f"\nΣφάλμα στη γραμμή {index}")
-                print(row[['VariationID', 'conflicting_interpretations']])
-                print(f"Τύπος: {type(row['conflicting_interpretations'])}")
-                print(f"Σφάλμα: {e}")
-                raise  # Για debugging, μπορείς να αφαιρέσεις το raise αφού σταθεροποιηθεί
-
-        conn.commit()
-
-'''
 
 def safe_jsonb(value):
     """
@@ -506,80 +374,6 @@ def categorize_variant_name(name: str) -> dict:
     
     return result
 
-'''
-def process_clinvar_data(variant_path: str) -> pd.DataFrame:
-    """
-    Ολοκληρωμένη συνάρτηση επεξεργασίας δεδομένων ClinVar
-    με κατηγοριοποίηση βάσει του πεδίου Name
-    """
-    # Φόρτωση δεδομένων ClinVar
-    df = pd.read_csv(variant_path, sep='\t', low_memory=False)
-    
-    # Φιλτράρισμα για BRCA1 και GRCh38
-    df_brca = df[(df['GeneSymbol'] == 'BRCA1') & (df['Assembly'] == 'GRCh38')].copy()
-    
-    # Κατηγοριοποίηση μεταλλάξεων βάσει του πεδίου Name
-    df_brca['VariantName_analysis'] = df_brca['Name'].apply(categorize_variant_name)
-    
-    # Δημιουργία νέων στηλών
-    df_brca['Variant_type'] = df_brca['VariantName_analysis'].apply(lambda x: x['variant_type'])
-    df_brca['transcript_id'] = df_brca['Name'].apply(extract_transcript_id)
-    df_brca['variant_type'] = df_brca.apply(lambda row: determine_variant_type(row['HGVS_p'], row['HGVS_c']), axis=1)
-    df_brca['DNA_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['DNA_variant'])
-    df_brca['Protein_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Protein_variant'])
-    df_brca['Other_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Other_variant'])
-    
-    # Αφαίρεση της προσωρινής στήλης ανάλυσης
-    df_brca.drop(columns=['VariantName_analysis'], inplace=True)
-    
-    return df_brca
-    '''
-
-#######################################################
-'''
-def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
-    """
-    Επεξεργασία δεδομένων ClinVar ΑΜΕΣΑ από το .gz αρχείο,
-    χωρίς πλήρη αποσυμπίεση. Χρησιμοποιεί zcat και grep.
-    """
-
-    print("Φόρτωση όλων των δεδομένων από το gzip...")
-    with gzip.open(variant_gz_path, 'rt') as f:
-        df = pd.read_csv(f, sep='\t', low_memory=False)
-
-    
-    # 1. Φιλτράρισμα για γονίδιο KLHL10 και GRCh38 με grep
-    print("Φιλτράρισμα δεδομένων με grep...")
-    grep_cmd = f"zcat {variant_gz_path} | grep -E 'KLHL10.*GRCh38' > filtered_variants.tsv"
-    subprocess.run(grep_cmd, shell=True, check=True)
-    
-    # 2. Φόρτωση ΜΟΝΟ των φιλτραρισμένων δεδομένων
-    print("Φόρτωση φιλτραρισμένων δεδομένων...")
-    df = pd.read_csv("filtered_variants.tsv", sep='\t', low_memory=False)
-    
-    # 3. Κατηγοριοποίηση μεταλλάξεων (όπως πριν)
-    df['VariantName_analysis'] = df['Name'].apply(categorize_variant_name)
-    # Κατηγοριοποίηση μεταλλάξεων βάσει του πεδίου Name
-    df_brca['VariantName_analysis'] = df_brca['Name'].apply(categorize_variant_name)
-    
-    # Δημιουργία νέων στηλών
-    df_brca['Variant_type'] = df_brca['VariantName_analysis'].apply(lambda x: x['variant_type'])
-    df_brca['transcript_id'] = df_brca['Name'].apply(extract_transcript_id)
-    df_brca['variant_type'] = df_brca.apply(lambda row: determine_variant_type(row['HGVS_p'], row['HGVS_c']), axis=1)
-    df_brca['DNA_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['DNA_variant'])
-    df_brca['Protein_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Protein_variant'])
-    df_brca['Other_variant'] = df_brca['VariantName_analysis'].apply(lambda x: x['Other_variant'])
-    
-    # Αφαίρεση της προσωρινής στήλης ανάλυσης
-    df_brca.drop(columns=['VariantName_analysis'], inplace=True)
-    
-    # 4. Διαγραφή προσωρινού αρχείου
-    os.remove("filtered_variants.tsv")
-    
-    return df
-
-###########################################################################
-    '''
 
 
 def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
@@ -724,42 +518,6 @@ def determine_variant_type(hgvs_p: str, hgvs_c: str) -> str:
     
     return "unknown"
 
-'''
-# --- Κύρια Λειτουργία ---
-def main():
-    # Σύνδεση στη βάση
-    conn = psycopg2.connect(**DB_CONFIG)
-    create_tables(conn)
-    
-    try:
-        # Λήψη αρχείων
-        variant_gz = "variant_summary.txt.gz"
-        submission_gz = "submission_summary.txt.gz"
-        
-        download_file(CLINVAR_VARIANT_URL, variant_gz)  
-        download_file(CLINVAR_SUBMISSION_URL, submission_gz)
-        
-        # Επεξεργασία δεδομένων
-        variant_file = variant_gz.replace(".gz", "")
-        submission_file = submission_gz.replace(".gz", "")
-        
-        df_final = process_clinvar_data(variant_file)
-        
-        # Εισαγωγή στη βάση
-        insert_to_database(conn, df_final)
-        
-        print("Επεξεργασία ολοκληρώθηκε επιτυχώς!")
-        
-    except Exception as e:
-        print(f"Σφάλμα: {e}")
-    finally:
-        # Καθαρισμός και κλείσιμο σύνδεσης
-        for f in [variant_gz, submission_gz, variant_file, submission_file]:
-            if os.path.exists(f):
-                os.remove(f)
-        conn.close()
-
-        '''
 
 
 
