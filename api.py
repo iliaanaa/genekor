@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Query
-from typing import List
+from typing import List, Optional
 import psycopg2
 import pandas as pd
 from psycopg2.extras import RealDictCursor
@@ -23,31 +23,74 @@ DB_CONFIG={
 def health_check():
     return{"status":"clinvar api is running"}
 
-
-# Ερώτημα: πάρε μεταλλάξεις για ένα γονίδιο
-@app.get("/variants")
-def get_variants(
-    gene: str = Query(..., description="Γονίδιο π.χ. KLHL10"),
-    max_results: int = Query(100, ge=1, le=1000)
+@app.get("/variant_counts")
+def get_variant_counts(
+    gene: str = Query(...,description="Γονίδιο π.χ. KLHL10"),
+    consequence: Optional[str] = Query(None, description="Τύπος μετάλλαξης π.χ. missense"),
+    significance: Optional[str] = Query(None, description="Παθογένεια π.χ. Pathogenic"),
+    protein_start: Optional[int] = Query(None, description="Αρχή εύρους θέσης πρωτεΐνης"),
+    protein_end: Optional[int] = Query(None, description="Τέλος εύρους θέσης πρωτεΐνης"),
+    exact_position: Optional[int] = Query(None, description="Συγκεκριμένη θέση πρωτεΐνης")
 ):
     """
-    Επιστρέφει τις μεταλλάξεις για το συγκεκριμένο γονίδιο
+    Επιστρέφει πλήθος μεταλλάξεων με βάση φίλτρα: τύπος, παθογένεια, θέση πρωτεΐνης
     """
     conn = None
+    try: 
+        conn=psycopg2.connect(**DB_CONFIG)
+        cur=conn.cursor()
 
+        query="SELECT COUNT(*) FROM gene_variants WHERE gene_symbol = %s"
+        params = [gene]
+
+        if consequence:
+            query += " AND molecular_consequence ILIKE %s"
+            params.append(f"%{consequence}%")
+
+        if significance:
+            query += " AND clinical_significance ILIKE %s"
+            params.append(f"%{significance}%")
+
+
+        if exact_position is not None:
+            query += " AND protein_pos = %s"
+            params.append(exact_position)
+        elif protein_start is not None and protein_end is not None:
+            query += " AND protein_pos BETWEEN %s AND %s"
+            params.extend([protein_start, protein_end])
+
+        cur.execute(query, tuple(params))
+        count = cur.fetchone()[0]
+        return {"count": count}
+    
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+@app.get("/summary")
+def summary_by_consequence(
+    gene: str = Query(..., description="Γονίδιο π.χ. KLHL10")
+):
+    """
+    Επιστρέφει πίνακα με πλήθος παραλλαγών ανά τύπο (π.χ. missense, nonsense, frameshift) για το συγκεκριμένο γονίδιο.
+    """
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor(cursor_factory=RealDictCursor)
+
         cur.execute("""
-            SELECT variation_id, hgvs_c, hgvs_p, clinical_significance,
-                   molecular_consequence, review_status, acmg_criteria
+            SELECT molecular_consequence, COUNT(*) as count
             FROM gene_variants
             WHERE gene_symbol = %s
-            LIMIT %s;
-        """, (gene, max_results))
-        
+            GROUP BY molecular_consequence
+            ORDER BY count DESC;
+        """, (gene,))
+
         results = cur.fetchall()
-        return results
+        summary = {row['molecular_consequence']: row['count'] for row in results}
+        return {"gene": gene, "summary": summary}
 
     except Exception as e:
         return {"error": str(e)}
@@ -55,4 +98,148 @@ def get_variants(
         if conn:
             conn.close()
 
-            
+# 1. Summary by molecular consequence
+@app.get("/summary")
+def summary_by_consequence(gene: str = Query(...)):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT molecular_consequence, COUNT(*) as count
+            FROM gene_variants
+            WHERE gene_symbol = %s
+            GROUP BY molecular_consequence
+            ORDER BY count DESC;
+        """, (gene,))
+        results = cur.fetchall()
+        summary = {row['molecular_consequence']: row['count'] for row in results}
+        return {"gene": gene, "summary": summary}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn: conn.close()
+
+
+
+#Ομαδοποίηση με βάση παθογένεια
+@app.get("/significance_summary")
+def significance_summary(gene: str = Query(...)):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT clinical_significance, COUNT(*) as count
+            FROM gene_variants
+            WHERE gene_symbol = %s
+            GROUP BY clinical_significance
+            ORDER BY count DESC;
+        """, (gene,))
+        rows = cur.fetchall()
+        return {"gene": gene, "summary": {r['clinical_significance']: r['count'] for r in rows}}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn: conn.close()
+
+
+# Αναζήτηση με τύπο παραλλαγής + παθογένεια
+def variant_counts(gene: str, consequence: Optional[str] = None, significance: Optional[str] = None):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        query = "SELECT COUNT(*) FROM gene_variants WHERE gene_symbol = %s"
+        params = [gene]
+        if consequence:
+            query += " AND molecular_consequence ILIKE %s"
+            params.append(f"%{consequence}%")
+        if significance:
+            query += " AND clinical_significance ILIKE %s"
+            params.append(f"%{significance}%")
+        cur.execute(query, tuple(params))
+        count = cur.fetchone()[0]
+        return {"gene": gene, "count": count}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn: conn.close()
+    
+
+@app.get("/variants_by_position")
+def variants_by_position(gene: str, min_pos: Optional[int] = None, max_pos: Optional[int] = None):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        query = "SELECT * FROM gene_variants WHERE gene_symbol = %s"
+        params = [gene]
+        if min_pos is not None:
+            query += " AND protein_pos >= %s"
+            params.append(min_pos)
+        if max_pos is not None:
+            query += " AND protein_pos <= %s"
+            params.append(max_pos)
+        cur.execute(query, tuple(params))
+        return cur.fetchall()
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn: conn.close()
+
+
+@app.get("/available_genes")
+def available_genes():
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT gene_symbol FROM gene_variants ORDER BY gene_symbol")
+        genes = [r[0] for r in cur.fetchall()]
+        return {"genes": genes}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn: conn.close()
+
+# 6. Available consequence types
+@app.get("/available_consequences")
+def available_consequences():
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT molecular_consequence FROM gene_variants ORDER BY molecular_consequence")
+        types = [r[0] for r in cur.fetchall()]
+        return {"consequences": types}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn: conn.close()
+
+# 7. Search with multiple filters
+@app.get("/search_variants")
+def search_variants(
+    gene: Optional[str] = None,
+    consequence: Optional[str] = None,
+    significance: Optional[str] = None,
+    protein_pos: Optional[int] = None
+):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        query = "SELECT * FROM gene_variants WHERE 1=1"
+        params = []
+        if gene:
+            query += " AND gene_symbol = %s"
+            params.append(gene)
+        if consequence:
+            query += " AND molecular_consequence ILIKE %s"
+            params.append(f"%{consequence}%")
+        if significance:
+            query += " AND clinical_significance ILIKE %s"
+            params.append(f"%{significance}%")
+        if protein_pos is not None:
+            query += " AND protein_pos = %s"
+            params.append(protein_pos)
+        cur.execute(query, tuple(params))
+        return cur.fetchall()
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn: conn.close()
