@@ -80,7 +80,10 @@ def main():
                 if row['protein_pos'] in support['PM5']['protein_pos'].values:
                   crit.append('PM5')
                 return "; ".join(crit) if crit else ""  # <=== returns string or empty string
-
+            
+            df['acmg_from_grouping'] = df.apply(determine_criteria, axis=1)
+            return df
+        
         df_final = mark_acmg_criteria(df_final, support_tables)
 
         # --- original script continues here ---
