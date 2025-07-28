@@ -40,9 +40,14 @@ def download_file(url: str, output_path: str) -> None:
         with gzip.open(output_path, 'rb') as f_in:
             with open(output_path.replace(".gz", ""), 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
+
+
+
 #grep h zcat gia na mh skaei
 def create_tables(conn: psycopg2.extensions.connection) -> None:
     """Δημιουργία πινάκων στη βάση"""
+    '''  Χρησιμοποιεί with για να δημιουργήσει έναν cursor (cur)
+Ο cursor επιτρέπει να εκτελείς SQL εντολές στη βάση'''
     with conn.cursor() as cur:
         # Κύριος πίνακας μεταλλάξεων
         cur.execute("""
@@ -70,7 +75,10 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
             protein_pos BIGINT
         );
         """)
-        conn.commit()
+        conn.commit() 
+'''Η commit() σφραγίζει τις αλλαγές στη βάση.
+
+Αν δεν γίνει commit(), τότε η δημιουργία πίνακα δεν θα είναι μόνιμη.'''
 
 #ACMG Criteria
 def apply_acmg_criteria(row: pd.Series) -> List[str]:
