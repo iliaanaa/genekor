@@ -72,6 +72,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
         """)
         conn.commit()
 '''
+'''
 def create_tables(conn: psycopg2.extensions.connection) -> None:
     """Δημιουργία πινάκων στη βάση με σωστά JSONB πεδία"""
     with conn.cursor() as cur:
@@ -103,7 +104,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
         );
         """)
         conn.commit()
-
+'''
 '''
 #ACMG Criteria
 def apply_acmg_criteria(row: pd.Series) -> List[str]:
@@ -237,6 +238,38 @@ def apply_acmg_criteria(row: pd.Series) -> List[str]:
     
     return criteria
 '''
+def create_tables(conn: psycopg2.extensions.connection) -> None:
+    """Δημιουργία πινάκων στη βάση με σωστά JSONB πεδία"""
+    with conn.cursor() as cur:
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS gene_variants (
+            variation_id BIGINT PRIMARY KEY,
+            gene_symbol TEXT NOT NULL,
+            transcript_id TEXT,
+            hgvs_c TEXT,
+            hgvs_p TEXT,
+            molecular_consequence TEXT,
+            clinical_significance TEXT,
+            review_status TEXT,
+            phenotype_list TEXT,
+            assembly TEXT NOT NULL,
+            chromosome TEXT,
+            start_pos BIGINT,
+            end_pos BIGINT,
+            reference_allele TEXT,
+            alternate_allele TEXT,
+            acmg_criteria JSONB,
+            conflicting_interpretations JSONB,
+            RCVaccession TEXT[],
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_evaluated DATE,
+            protein_pos BIGINT,
+            acmg_classification TEXT
+        );
+            """)
+        conn.commit()
+
+
 
 
 def apply_acmg_criteria(row: pd.Series) -> Dict[str, Any]:
@@ -369,23 +402,19 @@ def calculate_conflict_score(conflict_data):
 
     return df_brca
 
-
 def parse_conflict(val):
-    """Παίρνει την τιμή από τη στήλη conflicting_interpretations και επιστρέφει καθαρή λίστα"""
     if isinstance(val, bool):
         return [str(val)]
     if pd.isna(val):
         return []
     if isinstance(val, str):
         try:
-            # Αν είναι ήδη JSON list σε μορφή string
             return json.loads(val)
         except json.JSONDecodeError:
             return [val]
     if isinstance(val, list):
         return val
-    return [str(val)]  # τελευταία γραμμή άμυνας
-
+    return [str(val)]
 
 def parse_rcv(value):
     """Ασφαλής μετατροπή RCVaccession σε λίστα από string"""
@@ -509,10 +538,20 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
         conn.commit()
 
 '''
-
+'''
 def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -> None:
     """Εισαγωγή δεδομένων με σωστό JSONB χειρισμό"""
+    total_rows_affected=0
     with conn.cursor() as cur:
+
+
+        # Έλεγχος για υπάρχοντα IDs στη βάση
+        cur.execute("SELECT variation_id FROM gene_variants WHERE variation_id IN %s",(tuple(df['VariationID'].tolist()),))
+        existing_ids = [r[0] for r in cur.fetchall()]
+        print(f"Existing IDs in DB: {existing_ids}")
+
+
+
         for _, row in df.iterrows():
             # Προετοιμασία δεδομένων ACMG
             acmg_data = apply_acmg_criteria(row)
@@ -570,10 +609,157 @@ def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -
             acmg_data['protein_pos'],
             row.get('LastEvaluated'),  
             acmg_data['acmg_classification']
-        ))
+        ))      
+        result = cur.fetchone()
+        print(f"Updated variant: {result}") if result else print("No update occurred")
 
         conn.commit()
+    print(f"Rows affected after insert/update: {total_rows_affected}")
+'''
+'''
+def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -> None:
+    with conn.cursor() as cur:
+        for _, row in df.iterrows():
+            # Προετοιμασία conflicting interpretations
+            conflict_data = parse_conflict(row.get('conflicting_interpretations'))
 
+            cur.execute("""
+                INSERT INTO gene_variants (
+                    variation_id, gene_symbol, transcript_id, hgvs_c, hgvs_p,
+                    molecular_consequence, clinical_significance, review_status,
+                    phenotype_list, assembly, chromosome, start_pos, end_pos,
+                    reference_allele, alternate_allele, acmg_criteria,
+                    conflicting_interpretations, RCVaccession, protein_pos,
+                    last_evaluated, acmg_classification
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                ON CONFLICT (variation_id) DO UPDATE SET
+                    gene_symbol = EXCLUDED.gene_symbol,
+                    hgvs_c = EXCLUDED.hgvs_c,
+                    hgvs_p = EXCLUDED.hgvs_p,
+                    molecular_consequence = EXCLUDED.molecular_consequence,
+                    clinical_significance = EXCLUDED.clinical_significance,
+                    review_status = EXCLUDED.review_status,
+                    phenotype_list = EXCLUDED.phenotype_list,
+                    acmg_criteria = EXCLUDED.acmg_criteria,
+                    conflicting_interpretations = EXCLUDED.conflicting_interpretations,
+                    RCVaccession = EXCLUDED.RCVaccession,
+                    protein_pos = EXCLUDED.protein_pos,
+                    acmg_classification = EXCLUDED.acmg_classification,
+                    last_updated = CURRENT_TIMESTAMP
+            """, (
+                row['VariationID'],
+                row['GeneSymbol'],
+                row.get('transcript_id'),
+                row.get('HGVS_c'),
+                row.get('HGVS_p'),
+                row.get('molecular_consequence'),
+                row.get('ClinicalSignificance'),
+                row.get('ReviewStatus'),
+                row.get('PhenotypeList'),
+                row.get('Assembly'),
+                row.get('Chromosome'),
+                row.get('Start'),
+                row.get('Stop'),
+                row.get('ReferenceAllele'),
+                row.get('AlternateAllele'),
+                Json(row.get('acmg_criteria', [])),
+                Json(conflict_data),
+                row.get('RCVaccession', []),
+                row.get('protein_pos'),
+                row.get('LastEvaluated'),  
+                row.get('acmg_classification')
+            ))
+
+        conn.commit()
+'''
+def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -> None:
+    print("Πλήθος εγγραφών πριν insert:", len(df))
+
+    # Αφαίρεση γραμμών με NaN σε κρίσιμα πεδία
+    df = df.dropna(subset=['VariationID', 'Start', 'Stop'])
+
+    max_bigint = 9223372036854775807
+
+    # Λίστα πεδίων που πρέπει να είναι εντός BIGINT
+    bigint_fields = ['VariationID', 'Start', 'Stop', 'protein_pos', 'PositionVCF', '#AlleleID', 'RS# (dbSNP)']
+
+    # Καθαρισμός μη αριθμητικών ή out-of-range
+    for field in bigint_fields:
+        if field in df.columns:
+            df = df[df[field].apply(lambda x: isinstance(x, (int, np.integer, float)) and not pd.isna(x) and abs(x) <= max_bigint)]
+
+    # Εξαναγκασμός σε int64 όπου γίνεται
+    for field in ['VariationID', 'Start', 'Stop']:
+        df[field] = df[field].astype('int64')
+
+    if 'protein_pos' in df.columns:
+        df['protein_pos'] = df['protein_pos'].astype('Int64')  # nullable int
+
+    df = df.where(pd.notnull(df), None)
+
+    print("Πλήθος έγκυρων εγγραφών προς εισαγωγή:", len(df))
+
+    with conn.cursor() as cur:
+        for _, row in df.iterrows():
+            conflict_data = parse_conflict(row.get('conflicting_interpretations'))
+
+            try:
+                cur.execute("""
+                    INSERT INTO gene_variants (
+                        variation_id, gene_symbol, transcript_id, hgvs_c, hgvs_p,
+                        molecular_consequence, clinical_significance, review_status,
+                        phenotype_list, assembly, chromosome, start_pos, end_pos,
+                        reference_allele, alternate_allele, acmg_criteria,
+                        conflicting_interpretations, RCVaccession, protein_pos,
+                        last_evaluated, acmg_classification
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (variation_id) DO UPDATE SET
+                        gene_symbol = EXCLUDED.gene_symbol,
+                        hgvs_c = EXCLUDED.hgvs_c,
+                        hgvs_p = EXCLUDED.hgvs_p,
+                        molecular_consequence = EXCLUDED.molecular_consequence,
+                        clinical_significance = EXCLUDED.clinical_significance,
+                        review_status = EXCLUDED.review_status,
+                        phenotype_list = EXCLUDED.phenotype_list,
+                        acmg_criteria = EXCLUDED.acmg_criteria,
+                        conflicting_interpretations = EXCLUDED.conflicting_interpretations,
+                        RCVaccession = EXCLUDED.RCVaccession,
+                        protein_pos = EXCLUDED.protein_pos,
+                        acmg_classification = EXCLUDED.acmg_classification,
+                        last_updated = CURRENT_TIMESTAMP
+                """, (
+                    row['VariationID'],
+                    row.get('GeneSymbol'),
+                    row.get('transcript_id'),
+                    row.get('HGVS_c'),
+                    row.get('HGVS_p'),
+                    row.get('molecular_consequence'),
+                    row.get('ClinicalSignificance'),
+                    row.get('ReviewStatus'),
+                    row.get('PhenotypeList'),
+                    row.get('Assembly'),
+                    row.get('Chromosome'),
+                    row['Start'],
+                    row['Stop'],
+                    row.get('ReferenceAllele'),
+                    row.get('AlternateAllele'),
+                    Json(row.get('acmg_criteria', [])),
+                    Json(conflict_data),
+                    row.get('RCVaccession', []),
+                    row.get('protein_pos'),
+                    row.get('LastEvaluated'),  
+                    row.get('acmg_classification')
+                ))
+            except Exception as e:
+                print(f"Σφάλμα κατά την εισαγωγή της γραμμής με VariationID={row['VariationID']}: {e}")
+
+        conn.commit()
 
 def extract_HGVS(name: str) -> dict:
     """

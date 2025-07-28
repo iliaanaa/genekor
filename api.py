@@ -4,7 +4,7 @@ import psycopg2
 import pandas as pd
 from psycopg2.extras import RealDictCursor
 import json
-
+from krithria import apply_criteria
 app=FastAPI()
 
 
@@ -23,6 +23,44 @@ DB_CONFIG={
 def health_check():
     return{"status":"clinvar api is running"}
 
+
+@app.get("/acmg_criteria")
+def get_acmg_criteria(gene: str = Query(..., description="Όνομα γονιδίου")):
+    """
+    Επιστρέφει τις παραλλαγές του γονιδίου με τα υπολογισμένα ACMG κριτήρια (PP5, BP6, PS1, PM5)
+    """
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        query = """
+            SELECT 
+                variation_id, gene_symbol, hgvs_c, hgvs_p,
+                submitters, protein_pos
+            FROM gene_variants
+            WHERE gene_symbol = %s
+        """
+        cur.execute(query, (gene,))
+        rows = cur.fetchall()
+
+        if not rows:
+            return {"message": f"No variants found for gene '{gene}'"}
+
+        df = pd.DataFrame(rows)
+        df = apply_criteria(df)
+
+        # Επιστρέφουμε μόνο τα σχετικά πεδία
+        return df[[
+            'variation_id', 'hgvs_p', 'protein_pos',
+            'PP5', 'BP6', 'PS1', 'PM5'
+        ]].to_dict(orient="records")
+
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn:
+            conn.close()
+            
 @app.get("/variant_counts")
 def get_variant_counts(
     gene: str = Query(...,description="Γονίδιο π.χ. KLHL10"),
@@ -212,6 +250,7 @@ def available_consequences():
     finally:
         if conn: conn.close()
 
+'''
 # 7. Search with multiple filters
 @app.get("/search_variants")
 def search_variants(
@@ -239,6 +278,54 @@ def search_variants(
             params.append(protein_pos)
         cur.execute(query, tuple(params))
         return cur.fetchall()
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn: conn.close()
+'''
+
+@app.get("/search_variants")
+def search_variants(
+    gene: Optional[str] = None,
+    consequence: Optional[str] = None,
+    significance: Optional[str] = None,
+    protein_pos: Optional[int] = None
+):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Επιλέξτε ρητά όλα τα πεδία + το acmg_criteria
+        query = """
+            SELECT 
+                variation_id, gene_symbol, hgvs_c, hgvs_p,
+                clinical_significance, review_status,
+                acmg_criteria,
+                protein_pos
+            FROM gene_variants 
+            WHERE 1=1
+        """
+        params = []
+        
+        if gene:
+            query += " AND gene_symbol = %s"
+            params.append(gene)
+        if consequence:
+            query += " AND molecular_consequence ILIKE %s"
+            params.append(f"%{consequence}%")
+        if significance:
+            query += " AND clinical_significance ILIKE %s"
+            params.append(f"%{significance}%")
+        if protein_pos is not None:
+            query += " AND protein_pos = %s"
+            params.append(protein_pos)
+        
+        cur.execute(query, tuple(params))
+        variants = cur.fetchall()
+        
+        # Μετατροπή των δεδομένων σε JSON (χειρίζεται και None values)
+        return json.loads(json.dumps(variants, default=str))
+    
     except Exception as e:
         return {"error": str(e)}
     finally:

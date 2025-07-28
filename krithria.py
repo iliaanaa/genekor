@@ -1,32 +1,114 @@
-# Λεξικά γνωστών pathogenic variants και θέσεων
-known_pathogenic = {
-    'p.Arg504Gly': 'c.1510A>T',  # PS1: Ίδιο protein change, διαφορετικό DNA
-    'p.Trp41*': 'c.123G>A'       # PM5: Θέση 41 είναι hotspot
-}
-pathogenic_positions = [504, 41]  # PM5: Γνωστές pathogenic θέσεις
-trusted_submitters = ['ENIGMA', 'ClinVar']  # PP5/BP6: Αξιόπιστες πηγές
+import psycopg2
+import pandas as pd
+import urllib.request
+import re
 
-# Συνάρτηση ελέγχου ACMG κριτηρίων
-def apply_acmg_criteria(row):
-    criteria = []
-    
-    # PS1
-    if row['ProteinChange'] in known_pathogenic and row['DNAChange'] != known_pathogenic[row['ProteinChange']]:
-        criteria.append('PS1')
-    
-    # PM5
-    protein_pos = int(''.join(filter(str.isdigit, row['ProteinChange']))) if pd.notna(row['ProteinChange']) else None
-    if protein_pos in pathogenic_positions and row['ProteinChange'] not in known_pathogenic:
-        criteria.append('PM5')
-    
-    # PP5/BP6
-    if row['Submitter'] in trusted_submitters:
-        if row['ClinicalSignificance'] == 'Pathogenic':
-            criteria.append('PP5')
-        elif row['ClinicalSignificance'] == 'Benign':
-            criteria.append('BP6')
-    
-    return criteria
+def main():
+    conn = psycopg2.connect(**DB_CONFIG)
+    create_tables(conn)
 
-# Εφαρμογή στη στήλη 'acmg_criteria'
-df_brca['acmg_criteria'] = df_brca.apply(apply_acmg_criteria, axis=1)
+    try:
+        print("Ξεκίνημα script...")
+
+        variant_gz = "variant_summary.txt.gz"
+        urllib.request.urlretrieve(CLINVAR_VARIANT_URL, variant_gz)
+
+        df_final = process_clinvar_data(variant_gz)
+
+        # === Βήμα 1: Είσοδος χρήστη ===
+        print("\nΔώσε τα παρακάτω για την παραλλαγή στόχο:")
+        user_gene = input("Gene symbol (e.g., BRCA1): ").strip()
+        user_c_hgvs = input("c.HGVS (e.g., c.123G>T): ").strip()
+        user_p_hgvs = input("p.HGVS (e.g., p.Val12Cys) [Optional]: ").strip()
+        user_p_hgvs = user_p_hgvs if user_p_hgvs else None
+
+        user_pos = None
+        if user_p_hgvs:
+            match = re.search(r'[A-Z][a-z]{2}(\d+)[A-Z][a-z]{2}', user_p_hgvs)
+            if match:
+                user_pos = int(match.group(1))
+
+        # === Βήμα 2: Εύρεση παρόμοιων παραλλαγών ===
+        def variant_assortments(df, ref_gene, ref_c, ref_p=None, ref_pos=None):
+            same_c = df[(df['GeneSymbol'] == ref_gene) & (df['HGVS_c'] == ref_c)]
+            same_p = df[(df['GeneSymbol'] == ref_gene) & (df['HGVS_p'] == ref_p) & (df['HGVS_c'] != ref_c)] if ref_p else pd.DataFrame()
+            same_pos = df[(df['GeneSymbol'] == ref_gene) & (df['protein_pos'] == ref_pos) & (df['HGVS_p'] != ref_p)] if ref_pos else pd.DataFrame()
+            return same_c, same_p, same_pos
+
+        same_c, same_p, same_pos = variant_assortments(df_final, user_gene, user_c_hgvs, user_p_hgvs, user_pos)
+
+        # === Βήμα 3: Ομαδοποίηση κατά κλινική σημασία ===
+        def split_by_significance(df):
+            return {
+                'Pathogenic': df[df['ClinicalSignificance'].str.contains('Pathogenic', na=False)],
+                'Benign': df[df['ClinicalSignificance'].str.contains('Benign', na=False)],
+                'VUS': df[df['ClinicalSignificance'].str.contains('Uncertain significance', na=False)]
+            }
+
+        same_c_groups = split_by_significance(same_c)
+        same_p_groups = split_by_significance(same_p)
+        same_pos_groups = split_by_significance(same_pos)
+
+        # === Βήμα 4: Κατασκευή πίνακα υποψήφιων για ACMG ===
+        def build_acmg_support_tables(same_c_groups, same_p_groups, same_pos_groups):
+            pp5_candidates = same_c_groups['Pathogenic'][['HGVS_c']]
+            bp6_candidates = same_c_groups['Benign'][['HGVS_c']]
+            ps1_candidates = same_p_groups['Pathogenic'][['HGVS_p', 'HGVS_c']]
+            pm5_candidates = same_pos_groups['Pathogenic'][['HGVS_p', 'HGVS_c', 'protein_pos']]
+            return {
+                'PP5': pp5_candidates,
+                'BP6': bp6_candidates,
+                'PS1': ps1_candidates,
+                'PM5': pm5_candidates
+            }
+
+        support_tables = build_acmg_support_tables(same_c_groups, same_p_groups, same_pos_groups)
+
+        print("\n=== Υποψήφιες για ACMG κριτήρια ===")
+        for crit, df_support in support_tables.items():
+            print(f"{crit}: {len(df_support)} υποψήφιες")
+            print(df_support.head())
+
+        # === Βήμα 5: Σήμανση στο df_final ===
+        def mark_acmg_criteria(df, support):
+            def determine_criteria(row):
+                crit = []
+
+                # PP5
+                if row['HGVS_c'] in support['PP5']['HGVS_c'].values:
+                    crit.append('PP5')
+
+                # BP6
+                if row['HGVS_c'] in support['BP6']['HGVS_c'].values:
+                    crit.append('BP6')
+
+                # PS1
+                if pd.notna(row['HGVS_p']) and pd.notna(row['HGVS_c']):
+                    ps1_matches = support['PS1'][
+                        (support['PS1']['HGVS_p'] == row['HGVS_p']) &
+                        (support['PS1']['HGVS_c'] != row['HGVS_c'])
+                    ]
+                    if not ps1_matches.empty:
+                        crit.append('PS1')
+
+                # PM5
+                if pd.notna(row['protein_pos']) and pd.notna(row['HGVS_p']):
+                    pm5_matches = support['PM5'][
+                        (support['PM5']['protein_pos'] == row['protein_pos']) &
+                        (support['PM5']['HGVS_p'] != row['HGVS_p'])
+                    ]
+                    if not pm5_matches.empty:
+                        crit.append('PM5')
+
+                return "; ".join(crit) if crit else ""
+
+            df['acmg_from_grouping'] = df.apply(determine_criteria, axis=1)
+            return df
+
+        df_final = mark_acmg_criteria(df_final, support_tables)
+
+        # === Συνέχεια εισαγωγής στη βάση ===
+        insert_to_database(conn, df_final)
+
+    finally:
+        conn.close()

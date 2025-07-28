@@ -40,7 +40,39 @@ def download_file(url: str, output_path: str) -> None:
             with open(output_path.replace(".gz", ""), 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
 #grep h zcat gia na mh skaei
-
+'''
+def create_tables(conn: psycopg2.extensions.connection) -> None:
+    """Δημιουργία πινάκων στη βάση"""
+    with conn.cursor() as cur:
+        # Κύριος πίνακας μεταλλάξεων
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS gene_variants (
+            variation_id BIGINT PRIMARY KEY,
+            gene_symbol TEXT NOT NULL,
+            transcript_id TEXT,
+            hgvs_c TEXT,
+            hgvs_p TEXT,
+            molecular_consequence TEXT,
+            clinical_significance TEXT,
+            review_status TEXT,
+            phenotype_list TEXT,
+            assembly TEXT NOT NULL,
+            chromosome TEXT,
+            start_pos INTEGER,
+            end_pos INTEGER,
+            reference_allele TEXT,
+            alternate_allele TEXT,
+            acmg_criteria JSONB,
+            conflicting_interpretations JSONB,
+            RCVaccession TEXT[],
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_evaluated DATE,
+            protein_pos BIGINT
+        );
+        """)
+        conn.commit()
+'''
+'''
 def create_tables(conn: psycopg2.extensions.connection) -> None:
     """Δημιουργία πινάκων στη βάση με σωστά JSONB πεδία"""
     with conn.cursor() as cur:
@@ -72,6 +104,171 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
         );
         """)
         conn.commit()
+'''
+'''
+#ACMG Criteria
+def apply_acmg_criteria(row: pd.Series) -> List[str]:
+    criteria = []
+
+    known_pathogenic = {
+        'p.Arg504Gly': {'dna': 'c.1510A>T', 'significance': 'Pathogenic'},
+        'p.Trp41*': {'dna': 'c.123G>A', 'significance': 'Pathogenic'}
+    }
+
+    trusted_submitters = {'ClinVar', 'ExpertLab'}
+    pathogenic_positions = {41, 504}
+
+    # PS1
+    if row['HGVS_p'] in known_pathogenic:
+        if row['HGVS_c'] != known_pathogenic[row['HGVS_p']]['dna']:
+            criteria.append("PS1")
+
+    # PM5
+    #protein_pos = int(''.join(filter(str.isdigit, row['Protein_variant']))) if pd.notna(row['Protein_variant']) else None
+    protein_pos = extract_protein_pos(row['Protein_variant'])  if pd.notna(row['Protein_variant']) else None
+    if protein_pos in pathogenic_positions and row['HGVS_p'] not in known_pathogenic:
+        criteria.append('PM5')
+
+    # PP5 / BP6
+    if 'Submitter' in row and pd.notna(row['Submitter']) and row['Submitter'] in trusted_submitters:
+        if row['ClinicalSignificance'] == 'Pathogenic':
+            criteria.append('PP5')
+        elif row['ClinicalSignificance'] == 'Benign':
+            criteria.append('BP6')
+
+    return {
+        'acmg_criteria': criteria,
+        'protein_pos': protein_pos
+    }
+
+
+
+
+
+           # if row['Submitter'] in trusted_submitters:
+    #if row['ClinicalSignificance'] == 'Pathogenic':
+       # criteria.append('PP5')
+    #elif row['ClinicalSignificance'] == 'Benign':
+     #   criteria.append('BP6')
+'''
+
+'''
+def apply_acmg_criteria(row: pd.Series) -> Dict[str, Any]:
+    """
+    Επιστρέφει dictionary με:
+    - acmg_criteria: Λίστα με τα κριτήρια (PS1, PM5, κλπ)
+    - acmg_classification: Τελική κατάταξη (Pathogenic, Benign, κλπ)
+    - protein_pos: Θέση πρωτεΐνης
+    """
+    criteria = []
+    classification = "Uncertain Significance"  # Προεπιλεγμένη τιμή
+    
+    known_pathogenic = {
+        'p.Arg504Gly': {'dna': 'c.1510A>T', 'significance': 'Pathogenic'},
+        'p.Trp41*': {'dna': 'c.123G>A', 'significance': 'Pathogenic'}
+    }
+    
+    trusted_submitters = {'ClinVar', 'GeneDx', 'EGL', 'Invitae'}
+    
+    # PS1: Same amino acid change, different DNA change
+    if row['HGVS_p'] in known_pathogenic:
+        if row['HGVS_c'] != known_pathogenic[row['HGVS_p']]['dna']:
+            criteria.append("PS1")
+    
+    # PM5: Novel missense change at a pathogenic residue
+    protein_pos = extract_protein_pos(row['HGVS_p']) if pd.notna(row['HGVS_p']) else None
+    if protein_pos in {41, 504} and row['HGVS_p'] not in known_pathogenic:
+        criteria.append("PM5")
+    
+    # PP5/BP6: Trusted submitters
+    if 'Submitter' in row and row['Submitter'] in trusted_submitters:
+        if row['ClinicalSignificance'] == 'Pathogenic':
+            criteria.append("PP5")
+        elif row['ClinicalSignificance'] == 'Benign':
+            criteria.append("BP6")
+    
+    # Προσθήκη αυτόματης ταξινόμησης βάσει κριτηρίων
+    if "PS1" in criteria or "PM5" in criteria:
+        classification = "Likely Pathogenic"
+    if "PP5" in criteria:
+        classification = "Pathogenic"
+    if "BP6" in criteria:
+        classification = "Benign"
+    
+     # DEBUG: Εκτύπωσε τα ενδιάμεσα
+    print(f"Variant {row.get('VariationID')}:")
+    print(f"  consequence = {row.get('molecular_consequence')}")
+    print(f"  significance = {row.get('ClinicalSignificance')}")
+    print(f"  criteria = {criteria}")
+    
+    return {
+        'acmg_criteria': criteria,
+        'acmg_classification': classification,
+        'protein_pos': protein_pos
+    }
+
+'''
+'''
+def apply_acmg_criteria(row: pd.Series) -> List[str]:
+    criteria = []
+    
+    known_pathogenic = {
+        'p.Arg504Gly': {'dna': 'c.1510A>T', 'significance': 'Pathogenic'},
+        'p.Trp41*': {'dna': 'c.123G>A', 'significance': 'Pathogenic'}
+    }
+    
+    trusted_submitters = {'ClinVar', 'GeneDx', 'EGL', 'Invitae'}  # Ενημερώστε ανάλογα
+    
+    # PS1: Same amino acid change, different DNA change
+    if row['HGVS_p'] in known_pathogenic:
+        if row['HGVS_c'] != known_pathogenic[row['HGVS_p']]['dna']:
+            criteria.append("PS1")
+    
+    # PM5: Novel missense change at a pathogenic residue
+    protein_pos = extract_protein_pos(row['HGVS_p'])  # Βεβαιωθείτε ότι η συνάρτηση αυτή δουλεύει
+    if protein_pos in {41, 504} and row['HGVS_p'] not in known_pathogenic:
+        criteria.append("PM5")
+    
+    # PP5/BP6: Trusted submitters
+    if 'Submitter' in row and row['Submitter'] in trusted_submitters:
+        if row['ClinicalSignificance'] == 'Pathogenic':
+            criteria.append("PP5")
+        elif row['ClinicalSignificance'] == 'Benign':
+            criteria.append("BP6")
+    
+    return criteria
+'''
+def create_tables(conn: psycopg2.extensions.connection) -> None:
+    """Δημιουργία πινάκων στη βάση με σωστά JSONB πεδία"""
+    with conn.cursor() as cur:
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS gene_variants (
+            variation_id BIGINT PRIMARY KEY,
+            gene_symbol TEXT NOT NULL,
+            transcript_id TEXT,
+            hgvs_c TEXT,
+            hgvs_p TEXT,
+            molecular_consequence TEXT,
+            clinical_significance TEXT,
+            review_status TEXT,
+            phenotype_list TEXT,
+            assembly TEXT NOT NULL,
+            chromosome TEXT,
+            start_pos BIGINT,
+            end_pos BIGINT,
+            reference_allele TEXT,
+            alternate_allele TEXT,
+            acmg_criteria JSONB,
+            conflicting_interpretations JSONB,
+            RCVaccession TEXT[],
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_evaluated DATE,
+            protein_pos BIGINT,
+            acmg_classification TEXT
+        );
+            """)
+        conn.commit()
+
 
 
 
@@ -205,23 +402,19 @@ def calculate_conflict_score(conflict_data):
 
     return df_brca
 
-
 def parse_conflict(val):
-    """Παίρνει την τιμή από τη στήλη conflicting_interpretations και επιστρέφει καθαρή λίστα"""
     if isinstance(val, bool):
         return [str(val)]
     if pd.isna(val):
         return []
     if isinstance(val, str):
         try:
-            # Αν είναι ήδη JSON list σε μορφή string
             return json.loads(val)
         except json.JSONDecodeError:
             return [val]
     if isinstance(val, list):
         return val
-    return [str(val)]  # τελευταία γραμμή άμυνας
-
+    return [str(val)]
 
 def parse_rcv(value):
     """Ασφαλής μετατροπή RCVaccession σε λίστα από string"""
@@ -266,69 +459,90 @@ def safe_jsonb(value):
     return json.dumps(value)
 
 def insert_to_database(conn: psycopg2.extensions.connection, df: pd.DataFrame) -> None:
-    """Εισαγωγή δεδομένων με σωστό JSONB χειρισμό"""
+    print("Πλήθος εγγραφών πριν insert:", len(df))
+
+    # Αφαίρεση γραμμών με NaN σε κρίσιμα πεδία
+    df = df.dropna(subset=['VariationID', 'Start', 'Stop'])
+
+    max_bigint = 9223372036854775807
+
+    # Λίστα πεδίων που πρέπει να είναι εντός BIGINT
+    bigint_fields = ['VariationID', 'Start', 'Stop', 'protein_pos', 'PositionVCF', '#AlleleID', 'RS# (dbSNP)']
+
+    # Καθαρισμός μη αριθμητικών ή out-of-range
+    for field in bigint_fields:
+        if field in df.columns:
+            df = df[df[field].apply(lambda x: isinstance(x, (int, np.integer, float)) and not pd.isna(x) and abs(x) <= max_bigint)]
+
+    # Εξαναγκασμός σε int64 όπου γίνεται
+    for field in ['VariationID', 'Start', 'Stop']:
+        df[field] = df[field].astype('int64')
+
+    if 'protein_pos' in df.columns:
+        df['protein_pos'] = df['protein_pos'].astype('Int64')  # nullable int
+
+    df = df.where(pd.notnull(df), None)
+
+    print("Πλήθος έγκυρων εγγραφών προς εισαγωγή:", len(df))
+
     with conn.cursor() as cur:
         for _, row in df.iterrows():
-            # Προετοιμασία δεδομένων ACMG
-            acmg_data = apply_acmg_criteria(row)
-            
-            # Προετοιμασία conflicting interpretations
             conflict_data = parse_conflict(row.get('conflicting_interpretations'))
-            
-            # Εισαγωγή στη βάση
-        cur.execute("""
-            INSERT INTO gene_variants (
-                variation_id, gene_symbol, transcript_id, hgvs_c, hgvs_p,
-                molecular_consequence, clinical_significance, review_status,
-                phenotype_list, assembly, chromosome, start_pos, end_pos,
-                reference_allele, alternate_allele, acmg_criteria,
-                conflicting_interpretations, RCVaccession, protein_pos,  last_evaluated,
-                acmg_classification
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s
-            )
-            ON CONFLICT (variation_id) DO UPDATE SET
-                gene_symbol = EXCLUDED.gene_symbol,
-                hgvs_c = EXCLUDED.hgvs_c,
-                hgvs_p = EXCLUDED.hgvs_p,
-                molecular_consequence = EXCLUDED.molecular_consequence,
-                clinical_significance = EXCLUDED.clinical_significance,
-                review_status = EXCLUDED.review_status,
-                phenotype_list = EXCLUDED.phenotype_list,
-                acmg_criteria = EXCLUDED.acmg_criteria,
-                conflicting_interpretations = EXCLUDED.conflicting_interpretations,
-                RCVaccession = EXCLUDED.RCVaccession,
-                protein_pos = EXCLUDED.protein_pos,
-                acmg_classification = EXCLUDED.acmg_classification,
-                last_updated = CURRENT_TIMESTAMP
-        """, (
-            row['VariationID'],
-            row['GeneSymbol'],
-            row.get('transcript_id'),
-            row.get('HGVS_c'),
-            row.get('HGVS_p'),
-            row.get('molecular_consequence'),
-            row.get('ClinicalSignificance'),
-            row.get('ReviewStatus'),
-            row.get('PhenotypeList'),
-            row.get('Assembly'),
-            row.get('Chromosome'),
-            row.get('Start'),
-            row.get('Stop'),
-            row.get('ReferenceAllele'),
-            row.get('AlternateAllele'),
-            Json(acmg_data['acmg_criteria']),
-            Json(conflict_data),
-            #Json(row.get('RCVaccession', [])),
-            row.get('RCVaccession', []),
-            acmg_data['protein_pos'],
-            row.get('LastEvaluated'),  
-            acmg_data['acmg_classification']
-        ))
+
+            try:
+                cur.execute("""
+                    INSERT INTO gene_variants (
+                        variation_id, gene_symbol, transcript_id, hgvs_c, hgvs_p,
+                        molecular_consequence, clinical_significance, review_status,
+                        phenotype_list, assembly, chromosome, start_pos, end_pos,
+                        reference_allele, alternate_allele, acmg_criteria,
+                        conflicting_interpretations, RCVaccession, protein_pos,
+                        last_evaluated, acmg_classification
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (variation_id) DO UPDATE SET
+                        gene_symbol = EXCLUDED.gene_symbol,
+                        hgvs_c = EXCLUDED.hgvs_c,
+                        hgvs_p = EXCLUDED.hgvs_p,
+                        molecular_consequence = EXCLUDED.molecular_consequence,
+                        clinical_significance = EXCLUDED.clinical_significance,
+                        review_status = EXCLUDED.review_status,
+                        phenotype_list = EXCLUDED.phenotype_list,
+                        acmg_criteria = EXCLUDED.acmg_criteria,
+                        conflicting_interpretations = EXCLUDED.conflicting_interpretations,
+                        RCVaccession = EXCLUDED.RCVaccession,
+                        protein_pos = EXCLUDED.protein_pos,
+                        acmg_classification = EXCLUDED.acmg_classification,
+                        last_updated = CURRENT_TIMESTAMP
+                """, (
+                    row['VariationID'],
+                    row.get('GeneSymbol'),
+                    row.get('transcript_id'),
+                    row.get('HGVS_c'),
+                    row.get('HGVS_p'),
+                    row.get('molecular_consequence'),
+                    row.get('ClinicalSignificance'),
+                    row.get('ReviewStatus'),
+                    row.get('PhenotypeList'),
+                    row.get('Assembly'),
+                    row.get('Chromosome'),
+                    row['Start'],
+                    row['Stop'],
+                    row.get('ReferenceAllele'),
+                    row.get('AlternateAllele'),
+                    Json(row.get('acmg_criteria', [])),
+                    Json(conflict_data),
+                    row.get('RCVaccession', []),
+                    row.get('protein_pos'),
+                    row.get('LastEvaluated'),  
+                    row.get('acmg_classification')
+                ))
+            except Exception as e:
+                print(f"Σφάλμα κατά την εισαγωγή της γραμμής με VariationID={row['VariationID']}: {e}")
 
         conn.commit()
-
 
 def extract_HGVS(name: str) -> dict:
     """
@@ -507,31 +721,9 @@ def extract_transcript_id(name: str)->str:
     
     return match.group(1) if match else None
 
-    '''
-    (?<!\w) - Negative lookbehind: Βεβαιώνεται ότι δεν υπάρχει word character πριν
-
-([NXY]M_\d{5,}(?:\.\d{1,2})?) - Κύρια ομάδα:
-
-(?<!\w) Negative lookbehind: Βεβαιώνεται ότι το NM_ δεν προηγείται από άλλο word character (π.χ. γράμμα, αριθμό ή _).
-
-NM_ - Ταιριάζει ακριβώς το πρόθεμα των RefSeq mRNA transcripts.
-
-\d{5,} - Τουλάχιστον 5 ψηφία (οι πραγματικοί αριθμοί transcript είναι συνήθως 5-6 ψηφία)
-
-(?:\.\d{1,2})? - Προαιρετική έκδοση (1-2 ψηφία)
-
-(?=[(]) - Positive lookahead: Πρέπει να ακολουθείται από (
-'''
 
 def determine_variant_type(hgvs_p: str, hgvs_c: str) -> str:
-    """
-    Καθορίζει τον τύπο της μετάλλαξης βάσει των HGVS προσδιορισμών.
-    Επιστρέφει ένα από:
-    - frameshift, nonsense, deletion, duplication, insertion,
-    - missense, synonymous, protein_other,
-    - splice_site_essential, splice_region, 5'UTR, 3'UTR, non_coding
-    - unknown
-    """
+
     if pd.notna(hgvs_p) and isinstance(hgvs_p, str):
         hgvs_p = hgvs_p.strip()
         if "fs" in hgvs_p:
