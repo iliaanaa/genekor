@@ -1,13 +1,13 @@
-"""Enhanced Evalutaion of Variants with ACMG criteria (Refractored)"""
+"""Enhanced Evalutaion of Variants with ACMG criteria (Refractored and Optimized)"""
 import csv
 import re
 import os
 import json
 
-# --- Configuration ---
-gene = "gene_symbol"
-db_filename = "gene_variants.tsv"
-output_filename = f"{gene}_evaluation.tsv"
+# Configuration.
+GENE = "gene_symbol"
+DB_FILE= "gene_variants.tsv"
+OUTPUT_FILE = f"{gene}_evaluation.tsv"
 
 # Set of reputable submitters.
 REPUTABLE_SUBMITTERS = {
@@ -19,20 +19,26 @@ REPUTABLE_SUBMITTERS = {
     "Laboratory for Molecular Medicine",
     "University of Chicago Genetic Services"
 }
+CRITERIA = {
+    "PS1": "PS1", # Pathogenic, same amino acid, different nucleotide.
+    "PM5": "PM5", # Pathogenic, same codon, different AA change.
+    "PP5": "PP5", # Pathogenic, single reputable submitter.
+    "BP6": "BP6", # Benign, single reputable submitter.
+    "VUS": "Uncertain significance", # Used when significance is uncertain.
+    "CONFLICT": "Conflicting classifications", # Indicates internal conflict.
+    "UNCLASSIFIED": "Unclassified variant" # Catch-all for unknown significance.
+}
 
-# --- Input Collection ---
+# Input Collection.
 def collect_input():
-    transcript_id_input = input("Transcript ID: ").strip()
-    hgvs_c_input = input("coding variant: ").strip()
-    hgvs_p_input = input("protein variant: ").strip()
-    return transcript_id_input, hgvs_c_input, hgvs_p_input
+    return tuple(input(f"{label}: ").strip() for label in ["Transcript_ID", "HGVS_c", "HGVS_p"])
 
-# --- Codon Extraction ---
+# Codon Extraction.
 def extract_codon(hgvs_p_str):
-    match = re.search(r"[A-Za-z]{3}(\d+)[A-Za-z]{3}", hgvs_p_str)
+    match = re.search(r"[A-Za-z]{3}(\d+)[A-Za-z]{3}", hgvs_p_str or "")
     return match.group(1) if match else None
 
-# --- Criteria Evaluation ---
+# Criteria Evaluation.
 def evaluate_variant(row, inputs, input_codon):
     transcript_id_input, hgvs_c_input, hgvs_p_input = inputs
 
@@ -47,7 +53,8 @@ def evaluate_variant(row, inputs, input_codon):
 
     exact_protein = hgvs_p_input == hgvs_p
     same_transcript = transcript_id_input == transcript_id
-    same_codon = input_codon == db_codon and hgvs_p_input != hgvs_p
+    codon_match = input_codon == db_codon and hgvs_p_input != hgvs_p
+    
     is_pathogenic = "pathogenic" in significance
     is_benign = "benign" in significance
     is_vus = "uncertain significance" in significance
@@ -60,85 +67,90 @@ def evaluate_variant(row, inputs, input_codon):
 
     if same_transcript and exact_protein:
         match_type = "exact protein"
+        
         if is_pathogenic and is_single and is_reputable:
-            criteria.append("PP5")
+            criteria.append(CRITERIA["PP5"])
         elif is_benign and is_single and is_reputable:
-            criteria.append("BP6")
+            criteria.append(CRITERIA["BP6"])
         elif is_pathogenic and hgvs_c_input != hgvs_c:
-            criteria.append("PS1")
+            criteria.append(CRITERIA["PS1"])
         elif is_vus:
-            criteria.append("VUS")
+            criteria.append(CRITERIA["VUS"])
         elif is_conflict:
-            criteria.append("Conflicting classifications")
+            criteria.append(CRITERIA["CONFLICT"])
         else:
-            criteria.append("Unclassified variant")
-    elif same_codon and is_pathogenic:
+            criteria.append(CRITERIA["UNCLASSIFIED"])
+    elif codon_match and is_pathogenic:
         match_type = "codon match"
-        criteria.append("PM5")
+        criteria.append(CRITERIA["PM5"])
 
-return match_type, criteria, {
-    "transcript_id": transcript_id,
-    "hgvs_c": hgvs_c,
-    "hgvs_p": hgvs_p,
-    "submitter": submitter,
-    "clinical_significance": significance,
-    "review_status": review_status
-}
+    result = {
+        "transcript_id": transcript_id,
+        "hgvs_c": hgvs_c,
+        "hgvs_p": hgvs_p,
+        "submitter": submitter,
+        "clinical_significance": significance,
+        "review_status": review_status
+    }
 
-# --- Export Results ---
+    return match_type, criteria, result
+
+# Export Results.
 def export_results(all_matches):
+    fieldnames = [
+        "transcript_id", "hgvs_c", "hgvs_p", "submitter",
+        "clinical_significance", "review_status", "conflicting_interpetations", "match_type", "criteria"
+    ]
+    
     # Export to TSV.
     with open(output_filename, "w", encoding = "utf-8", newline = "") as outfile:
-        fieldnames = ["transcript_id", "hgvs_c", "hgvs_p", "submitter", "significance", "review_status", "match_type", "criteria"]
         writer = csv.DictWriter(outfile, fieldnames = fieldnames, delimiter = "\t")
         writer.writeheader()
-        for row in all_matches:
-            writer.writerow(row)
-        print(f"\nResults saned to TSV: {output_filename}")
+        writer.writerow(matches)
+    print(f"\nResults saved to TSV: {OUTPUT_FILE}")
 
     # Export to JSON.
-    json_filename = output_filename.replace(".tsv", ".json")
-    with open(json_filename, "w", encoding = "utf-8") as outfile:
+    json_path = OUTPUT_FILE.replace(".tsv", ".json")
+    with open(json_path, "w", encoding = "utf-8") as f_json:
         json.dump(all_matches, outfile, indent = 4, ensure_ascii = False)
-        print(f"\nResults also saved to JSON: {json_filename}")
+    print(f"\nResults also saved to JSON: {json_filename}")
 
-# --- Main Evaluation ---
+# Main.
 def main():
-    if not os.path.exists(db_filename):
-        print(f"Error: Database file '{db_filename}' not found.")
+    if not os.path.exists(DB_FILE):
+        print(f"Error: Database file '{DB_FILE}' not found.")
         return
 
     inputs = collect_input()
     input_codon = extract_codon(inputs[2])
-
     all_matches = []
 
-    with open(db_filename, "r", encoding = "utf-8") as infile:
+    with open(DB_FILE, "r", encoding = "utf-8") as infile:
         reader = csv.DictReader(infile, delimiter = "\t")
         for row in reader:
             match_type, criteria, info = evaluate_variant(row, inputs, input_codon)
             if match_type:
-                info.update({
+                result.update({
                     "match_type": match_type,
                     "criteria": ",".join(criteria)
                 })
-                all_matches.append(info)
+                all_matches.append(result)
 
     if all_matches:
-        print("\n--- Variant Evaluation Results ---\n")
+        print("\nVariant Evaluation Results:\n")
         for match in all_matches:
-            print(f"Match Type: {match['match_type'].upper()}")
-            print(f"Transcript: {match['transcript_id']}")
-            print(f"Variant: {match['hgvs_c']} / {match['hgvs_p']}")
-            print(f"Submitter: {match['submitter']}")
-            print(f"Significance: {match['clinical_significance']}")
-            print(f"Review Status: {match['review_status']}")
-            print(f"ACMG Evidence: {match['evidence']}")
+            print(f"Match Type: {entry['match_type']}")
+            print(f"Transcript: {entry['transcript_id']}")
+            print(f"Variant: {entry['hgvs_c']} / {match['hgvs_p']}")
+            print(f"Submitter: {entry['submitter']}")
+            print(f"Significance: {entry['clinical_significance']}")
+            print(f"Review Status: {entry['review_status']}")
+            print(f"ACMG Evidence: {entry['evidence']}")
 
         # Optionally export.
         export_results(all_matches)
     else:
-        print("No matching variant found in the database.")
+        print("No matching variants found.")
 
 if __name__ == "__main__":
     main()
