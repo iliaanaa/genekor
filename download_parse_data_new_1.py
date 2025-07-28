@@ -18,9 +18,9 @@ ASSEMBLY_FILTER = "GRCh38"  #Επιλέγει την έκδοση GRCh38 του 
 
 #Ρυθμίσεις Βάσης Δεδομένων
 DB_CONFIG = {
-    "dbname": "clinvar_db",
-    "user": "ilianam",
-    "password": "genekor123!", #prwhn wasd1029!
+    "dbname": "postgres",
+    "user": "postgres",
+    "password": "@#)%Chr154", #genekor123! #prwhn wasd1029!
     "host": "localhost",
     "port": 5432
 }
@@ -392,7 +392,7 @@ def extract_transcript_id(name: str)->str:
     return match.group(1) if match else None
 
     '''
-    (?<!\w) - Negative lookbehind: Βεβαιώνεται ότι δεν υπάρχει word character πριν
+    (r"(?<!\w)") - Negative lookbehind: Βεβαιώνεται ότι δεν υπάρχει word character πριν
 
 ([NXY]M_\d{5,}(?:\.\d{1,2})?) - Κύρια ομάδα:
 
