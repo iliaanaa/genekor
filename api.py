@@ -60,7 +60,7 @@ def get_acmg_criteria(gene: str = Query(..., description="Όνομα γονιδ�
     finally:
         if conn:
             conn.close()
-            
+
 @app.get("/variant_counts")
 def get_variant_counts(
     gene: str = Query(...,description="Γονίδιο π.χ. KLHL10"),
