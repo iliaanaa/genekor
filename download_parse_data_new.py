@@ -271,7 +271,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
 
 
 
-
+'''
 def apply_acmg_criteria(row: pd.Series) -> Dict[str, Any]:
     criteria = []
     classification = "Uncertain Significance"
@@ -323,6 +323,50 @@ def apply_acmg_criteria(row: pd.Series) -> Dict[str, Any]:
     return {
         'acmg_criteria': criteria,
         'acmg_classification': classification,
+        'protein_pos': protein_pos
+    }
+'''
+
+def apply_acmg_criteria(row: pd.Series) -> dict:
+    """
+    Εφαρμογή ACMG κριτηρίων (ΑΚΡΙΒΩΣ όπως στο pipeline)
+    Επιστρέφει dict με:
+    - acmg_criteria: Λίστα με κριτήρια (π.χ. ['PS1', 'PM5'])
+    - protein_pos: Θέση πρωτεΐνης (int ή None)
+    """
+    criteria = []
+    
+    # 1. Γνωστές pathogenic μεταλλάξεις (όπως στο pipeline)
+    known_pathogenic = {
+        'p.Arg504Gly': {'dna': 'c.1510A>T', 'significance': 'Pathogenic'},
+        'p.Trp41*': {'dna': 'c.123G>A', 'significance': 'Pathogenic'}
+    }
+    
+    # 2. Αξιόπιστες πηγές (όπως στο pipeline)
+    trusted_submitters = {'ClinVar', 'ExpertLab'}
+    
+    # 3. Pathogenic θέσεις (όπως στο pipeline)
+    pathogenic_positions = {41, 504}  
+    
+    # === PS1: Ίδια πρωτεΐνη, διαφορετικό DNA ===
+    if row['HGVS_p'] in known_pathogenic:
+        if row['HGVS_c'] != known_pathogenic[row['HGVS_p']]['dna']:
+            criteria.append("PS1")
+    
+    # === PM5: Διαφορετική missense σε pathogenic θέση ===
+    protein_pos = extract_protein_pos(row['HGVS_p'])
+    if protein_pos in pathogenic_positions and row['HGVS_p'] not in known_pathogenic:
+        criteria.append('PM5')
+    
+    # === PP5/BP6: Αξιόπιστη πηγή ===
+    if 'Submitter' in row and row['Submitter'] in trusted_submitters:
+        if row['ClinicalSignificance'] == 'Pathogenic':
+            criteria.append('PP5')
+        elif row['ClinicalSignificance'] == 'Benign':
+            criteria.append('BP6')
+    
+    return {
+        'acmg_criteria': criteria,
         'protein_pos': protein_pos
     }
 
@@ -592,7 +636,6 @@ df = pd.concat([df, df_HGVS], axis=1)
 
 print(df)
 
-
 def categorize_variant_name(name: str) -> dict:
     """
     Κατηγοριοποιεί το όνομα μετάλλαξης από το πεδίο 'Name' του ClinVar
@@ -634,8 +677,6 @@ def categorize_variant_name(name: str) -> dict:
             result['Other_variant'] = name
     
     return result
-
-
 
 def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
     """

@@ -15,12 +15,7 @@ def main():
 
         df_final = process_clinvar_data(variant_gz)
 
-        # === Βήμα 1: Είσοδος χρήστη ===
-        print("\nΔώσε τα παρακάτω για την παραλλαγή στόχο:")
-        user_gene = input("Gene symbol (e.g., BRCA1): ").strip()
-        user_c_hgvs = input("c.HGVS (e.g., c.123G>T): ").strip()
-        user_p_hgvs = input("p.HGVS (e.g., p.Val12Cys) [Optional]: ").strip()
-        user_p_hgvs = user_p_hgvs if user_p_hgvs else None
+     
 
         user_pos = None
         if user_p_hgvs:
