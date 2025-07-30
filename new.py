@@ -41,7 +41,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
             alternate_allele TEXT,
             acmg_criteria JSONB,
             conflicting_interpretations JSONB,
-            RCVaccession TEXT[],
+            rcvaccession TEXT[],
             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_evaluated DATE,
             protein_pos BIGINT
@@ -51,7 +51,7 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
 
 def extract_HGVS(name: str) -> Dict[str, Optional[str]]:
     """Εξαγωγή HGVS (ίδια με pipeline)"""
-    result = {'HGVS_c': None, 'HGVS_p': None}
+    result = {'hgvs_c': None, 'hgvs_p': None}
     if not pd.isna(name) and isinstance(name, str):
         dna_pattern = re.compile(r'(c\.[^*\s]+)')
         dna_star_pattern = re.compile(r'(c\.\*[\d_]+[^\s)]*)')
@@ -62,11 +62,11 @@ def extract_HGVS(name: str) -> Dict[str, Optional[str]]:
         protein_match = protein_pattern.search(name)
         
         if dna_match:
-            result['HGVS_c'] = dna_match.group(1)
+            result['hgvs_c'] = dna_match.group(1)
         elif dna_star_match:
-            result['HGVS_c'] = dna_star_match.group(1)
+            result['hgvs_c'] = dna_star_match.group(1)
         if protein_match:
-            result['HGVS_p'] = protein_match.group(1)
+            result['hgvs_p'] = protein_match.group(1)
     return result
 
 def extract_protein_pos(hgvs_p: str) -> Optional[int]:
@@ -87,32 +87,56 @@ def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
 
     print("Φόρτωση δεδομένων...")
     df = pd.read_csv("filtered_variants.tsv", sep='\t', low_memory=False)
+
+    # Normalize column names
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.lower()
+        .str.replace(r"[^\w]+", "_", regex=True)
+        .str.strip("_")
+    )
+
+    # Rename clinical significance column to your preferred format
+    if 'clinicalsignificance' in df.columns:
+        df = df.rename(columns={'clinicalsignificance': 'clinical_significance'})
+
     print("Στήλες διαθέσιμες στο αρχείο:")
     print(df.columns.tolist())
+
+    # Clean up temporary file
     os.remove("filtered_variants.tsv")
 
     # Εξαγωγή HGVS
-    hgvs_data = df['Name'].apply(extract_HGVS).apply(pd.Series)
+    hgvs_data = df['name'].apply(extract_HGVS).apply(pd.Series)
+
+    # Normalize HGVS subcolumn names
+    hgvs_data.columns = (
+        hgvs_data.columns
+        .str.strip()
+        .str.lower()
+        .str.replace(r"[^\w]+", "_", regex=True)
+        .str.strip("_")
+    )
+
+    # Συνένωση HGVS δεδομένων με το αρχικό df
     df = pd.concat([df, hgvs_data], axis=1)
 
-    # Προσθήκη protein_pos
-    df['protein_pos'] = df['HGVS_p'].apply(extract_protein_pos)
-
-    # Μετατροπή NumberSubmitters σε ακέραιο (αν υπάρχει), αλλιώς μηδέν
-    if 'NumberSubmitters' in df.columns:
-        df['NumberSubmitters'] = pd.to_numeric(df['NumberSubmitters'], errors='coerce').fillna(0).astype(int)
+    # Προσθήκη protein_pos (αν υπάρχει hgvs_p)
+    if 'hgvs_p' in df.columns:
+        df['protein_pos'] = df['hgvs_p'].apply(extract_protein_pos)
     else:
-        df['NumberSubmitters'] = 0
+        df['protein_pos'] = None
 
-    # Φιλτράρισμα: να κρατήσουμε μόνο εγγραφές με έγκυρο protein_pos
+    # Number of submitters
+    if 'numbersubmitters' in df.columns:
+        df['numbersubmitters'] = pd.to_numeric(df['numbersubmitters'], errors='coerce').fillna(0).astype(int)
+    else:
+        df['numbersubmitters'] = 0
+
+    # Φιλτράρισμα: κρατάμε μόνο εγγραφές με έγκυρο protein_pos
     df = df[df['protein_pos'].notna()]
     df['protein_pos'] = df['protein_pos'].astype(int)
-
-    # In your process_clinvar_data function, add:
-    df = df.rename(columns={
-        'ClinicalSignificance': 'clinical_significance',
-        # Add other columns if needed
-    })
 
     return df
 
@@ -130,25 +154,25 @@ def apply_acmg_criteria(df: pd.DataFrame) -> pd.DataFrame:
         criteria = []
         
         # PS1
-        if row['HGVS_p'] in known_pathogenic:
-            if row['HGVS_c'] != known_pathogenic[row['HGVS_p']]['dna']:
+        if row['hgvs_p'] in known_pathogenic:
+            if row['hgvs_c'] != known_pathogenic[row['hgvs_p']]['dna']:
                 criteria.append("PS1")
 
         # PM5
         protein_pos = row['protein_pos']
-        if protein_pos in pathogenic_positions and row['HGVS_p'] not in known_pathogenic:
+        if protein_pos in pathogenic_positions and row['hgvs_p'] not in known_pathogenic:
             criteria.append('PM5')
 
         # PP5
         if (row['clinical_significance'] == 'Pathogenic' 
                 and row.get('NumberSubmitters', 0) > 1 
-                and row.get('ConflictingInterpretations', '.') == '.'):
+                and row.get('conflictinginterpretations', '.') == '.'):
             criteria.append('PP5')
 
         # BP6
         if (row['clinical_significance'] == 'Benign' 
                 and row.get('NumberSubmitters', 0) > 1 
-                and row.get('ConflictingInterpretations', '.') == '.'):
+                and row.get('conflictinginterpretations', '.') == '.'):
             criteria.append('BP6')
 
         return criteria 
@@ -161,9 +185,9 @@ def apply_acmg_criteria(df: pd.DataFrame) -> pd.DataFrame:
 def variant_assortments(df, ref_gene, ref_c, ref_p=None, ref_pos=None):
     """Εύρεση παρόμοιων μεταλλάξεων"""
     # Make sure we're working with a copy that has all columns
-    same_c = df[(df['GeneSymbol'] == ref_gene) & (df['HGVS_c'] == ref_c)].copy()
-    same_p = df[(df['GeneSymbol'] == ref_gene) & (df['HGVS_p'] == ref_p) & (df['HGVS_c'] != ref_c)].copy() if ref_p else pd.DataFrame()
-    same_pos = df[(df['GeneSymbol'] == ref_gene) & (df['protein_pos'] == ref_pos) & (df['HGVS_p'] != ref_p)].copy() if ref_pos else pd.DataFrame()
+    same_c = df[(df['genesymbol'] == ref_gene) & (df['hgvs_c'] == ref_c)].copy()
+    same_p = df[(df['genesymbol'] == ref_gene) & (df['hgvs_p'] == ref_p) & (df['hgvs_c'] != ref_c)].copy() if ref_p else pd.DataFrame()
+    same_pos = df[(df['genesymbol'] == ref_gene) & (df['protein_pos'] == ref_pos) & (df['hgvs_p'] != ref_p)].copy() if ref_pos else pd.DataFrame()
     return same_c, same_p, same_pos
 
 def split_by_significance(df):
@@ -184,32 +208,48 @@ def split_by_significance(df):
     }
 
 def build_acmg_support_tables(same_c_groups, same_p_groups, same_pos_groups):
-    """Κατασκευή πινάκων υποστήριξης ACMG (ίδια με pipeline)"""
+    """Κατασκευή πινάκων υποστήριξης ACMG (με έλεγχο ύπαρξης δεδομένων και στηλών)"""
+
+    def safe_select(df, columns):
+        if df is None or df.empty:
+            return pd.DataFrame(columns=columns)
+        # Έλεγχος αν όλες οι στήλες υπάρχουν
+        missing_cols = [col for col in columns if col not in df.columns]
+        if missing_cols:
+            return pd.DataFrame(columns=columns)
+        return df[columns]
+
+    pp5_df = safe_select(same_c_groups.get('Pathogenic', pd.DataFrame()), ['hgvs_c'])
+    bp6_df = safe_select(same_c_groups.get('Benign', pd.DataFrame()), ['hgvs_c'])
+    ps1_df = safe_select(same_p_groups.get('Pathogenic', pd.DataFrame()), ['hgvs_p', 'hgvs_c'])
+    pm5_df = safe_select(same_pos_groups.get('Pathogenic', pd.DataFrame()), ['hgvs_p', 'hgvs_c', 'protein_pos'])
+
     return {
-        'PP5': same_c_groups['Pathogenic'][['HGVS_c']],
-        'BP6': same_c_groups['Benign'][['HGVS_c']],
-        'PS1': same_p_groups['Pathogenic'][['HGVS_p', 'HGVS_c']],
-        'PM5': same_pos_groups['Pathogenic'][['HGVS_p', 'HGVS_c', 'protein_pos']]
+        'PP5': pp5_df,
+        'BP6': bp6_df,
+        'PS1': ps1_df,
+        'PM5': pm5_df
     }
+
 
 def mark_acmg_criteria(df, support):
     """Σήμανση variants με βάση τα groups (ίδια με pipeline)"""
     def _determine_criteria(row):
         crit = []
-        if row['HGVS_c'] in support['PP5']['HGVS_c'].values:
+        if row['hgvs_c'] in support['PP5']['hgvs_c'].values:
             crit.append('PP5')
-        if row['HGVS_c'] in support['BP6']['HGVS_c'].values:
+        if row['hgvs_c'] in support['BP6']['hgvs_c'].values:
             crit.append('BP6')
-        if pd.notna(row['HGVS_p']) and pd.notna(row['HGVS_c']):
+        if pd.notna(row['hgvs_p']) and pd.notna(row['hgvs_c']):
             ps1_matches = support['PS1'][
-                (support['PS1']['HGVS_p'] == row['HGVS_p']) & 
-                (support['PS1']['HGVS_c'] != row['HGVS_c'])]
+                (support['PS1']['hgvs_p'] == row['hgvs_p']) & 
+                (support['PS1']['hgvs_c'] != row['hgvs_c'])]
             if not ps1_matches.empty:
                 crit.append('PS1')
-        if pd.notna(row['protein_pos']) and pd.notna(row['HGVS_p']):
+        if pd.notna(row['protein_pos']) and pd.notna(row['hgvs_p']):
             pm5_matches = support['PM5'][
                 (support['PM5']['protein_pos'] == row['protein_pos']) & 
-                (support['PM5']['HGVS_p'] != row['HGVS_p'])]
+                (support['PM5']['hgvs_p'] != row['hgvs_p'])]
             if not pm5_matches.empty:
                 crit.append('PM5')
         return "; ".join(crit) if crit else ""
@@ -226,7 +266,7 @@ def insert_to_database(conn, df):
                 variation_id, gene_symbol, hgvs_c, hgvs_p, molecular_consequence,
                 clinical_significance, review_status, phenotype_list, assembly,
                 chromosome, start_pos, end_pos, reference_allele, alternate_allele,
-                acmg_criteria, conflicting_interpretations, RCVaccession, protein_pos
+                acmg_criteria, conflicting_interpretations, rcvaccession, protein_pos
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (variation_id) DO UPDATE SET
                 gene_symbol = EXCLUDED.gene_symbol,
@@ -244,17 +284,19 @@ def insert_to_database(conn, df):
                 alternate_allele = EXCLUDED.alternate_allele,
                 acmg_criteria = EXCLUDED.acmg_criteria,
                 conflicting_interpretations = EXCLUDED.conflicting_interpretations,
-                RCVaccession = EXCLUDED.RCVaccession,
+                rcvaccession = EXCLUDED.rcvaccession,
                 protein_pos = EXCLUDED.protein_pos,
                 last_updated = CURRENT_TIMESTAMP;
             """, (
-                row['VariationID'], row['GeneSymbol'], row['HGVS_c'], row['HGVS_p'],
-                row['molecular_consequence'], row['clinical_significance'], row['ReviewStatus'],
-                row['PhenotypeList'], row['Assembly'], row['Chromosome'], row['Start'], row['Stop'],
-                row['ReferenceAllele'], row['AlternateAllele'], Json(row['acmg_criteria']),
-                Json(row['ConflictingInterpretations']), row['RCVaccession'], row['protein_pos']
+                row['variationid'], row['genesymbol'], row['hgvs_c'], row['hgvs_p'],
+                row['molecular_consequence'], row['clinical_significance'], row['reviewstatus'],
+                row['phenotypelist'], row['assembly'], row['chromosome'], row['start'], row['stop'],
+                row['referenceallele'], row['alternateallele'], Json(row['acmg_criteria']),
+                Json(row['conflictinginterpretations']), row['rcvaccession'], row['protein_pos']
             ))
         conn.commit()
+
+
 def group_based_acmg(row: pd.Series, df: pd.DataFrame) -> str:
     """
     Επιστρέφει grouping-based ACMG κριτήρια (PS1, PM5) για το δεδομένο variant.
@@ -263,12 +305,12 @@ def group_based_acmg(row: pd.Series, df: pd.DataFrame) -> str:
     criteria = []
 
     # PS1: Ίδιο πρωτεϊνικό αποτέλεσμα (HGVS_p) αλλά διαφορετικό HGVS_c, με Pathogenic απόφαση
-    same_p = df[(df['HGVS_p'] == row['HGVS_p']) & (df['HGVS_c'] != row['HGVS_c'])]
+    same_p = df[(df['hgvs_p'] == row['hgvs_p']) & (df['hgvs_c'] != row['hgvs_c'])]
     if not same_p.empty and any(same_p['clinical_significance'].str.contains('Pathogenic')):
         criteria.append('PS1')
 
     # PM5: Ίδια θέση (protein_pos), διαφορετικό HGVS_p, αλλά κάποια απόφαση Pathogenic
-    same_pos = df[(df['protein_pos'] == row['protein_pos']) & (df['HGVS_p'] != row['HGVS_p'])]
+    same_pos = df[(df['protein_pos'] == row['protein_pos']) & (df['hgvs_p'] != row['hgvs_p'])]
     if not same_pos.empty and any(same_pos['clinical_significance'].str.contains('Pathogenic')):
         criteria.append('PM5')
 
@@ -285,21 +327,21 @@ def apply_acmg_criteria_to_row(row):
     criteria = []
 
     # PS1
-    if row['HGVS_p'] in known_pathogenic:
-        if row['HGVS_c'] != known_pathogenic[row['HGVS_p']]['dna']:
+    if row['hgvs_p'] in known_pathogenic:
+        if row['hgvs_c'] != known_pathogenic[row['hgvs_p']]['dna']:
             criteria.append("PS1")
 
     # PM5
     protein_pos = row.get('protein_pos')
-    if protein_pos in pathogenic_positions and row['HGVS_p'] not in known_pathogenic:
+    if protein_pos in pathogenic_positions and row['hgvs_p'] not in known_pathogenic:
         criteria.append('PM5')
 
     # PP5
-    if row.get('clinical_significance') == 'Pathogenic' and row.get('NumberSubmitters', 0) > 1 and row.get('ConflictingInterpretations') == '.':
+    if row.get('clinical_significance') == 'Pathogenic' and row.get('NumberSubmitters', 0) > 1 and row.get('conflictinginterpretations') == '.':
         criteria.append('PP5')
 
     # BP6
-    if row.get('clinical_significance') == 'Benign' and row.get('NumberSubmitters', 0) > 1 and row.get('ConflictingInterpretations') == '.':
+    if row.get('clinical_significance') == 'Benign' and row.get('NumberSubmitters', 0) > 1 and row.get('conflictinginterpretations') == '.':
         criteria.append('BP6')
 
     return criteria
@@ -348,11 +390,58 @@ def categorize_variant_name(name: str) -> dict:
 
 def split_by_significance(df):
     """Ομαδοποίηση κατά κλινική σημασία (ίδια με pipeline)"""
+    if df.empty:
+        # Επιστρέφουμε άδειες DataFrames για κάθε κατηγορία
+        return {
+            'Pathogenic': df,
+            'Benign': df,
+            'VUS': df
+        }
+
     return {
         'Pathogenic': df[df['clinical_significance'].str.contains('Pathogenic', na=False)],
         'Benign': df[df['clinical_significance'].str.contains('Benign', na=False)],
         'VUS': df[df['clinical_significance'].str.contains('Uncertain significance', na=False)]
     }
+
+
+def simplify_clinical_significance(df):
+    # Μετατροπή σε μικρά γράμματα για ευκολότερο mapping
+    def map_significance(cs):
+        if cs is None or cs == '' or cs.lower() == 'not provided':
+            return 'not provided'
+        cs = cs.lower()
+        if 'pathogenic' in cs and 'likely' not in cs:
+            return 'pathogenic'
+        elif 'likely pathogenic' in cs:
+            return 'likely pathogenic'
+        elif 'benign' in cs and 'likely' not in cs:
+            return 'benign'
+        elif 'likely benign' in cs:
+            return 'likely benign'
+        elif 'uncertain significance' in cs or 'vus' in cs:
+            return 'vus'
+        elif 'conflicting interpretations' in cs:
+            return 'conflicting'
+        else:
+            return 'other'
+    df['clinsigsimple'] = df['clinical_significance'].apply(map_significance)
+    return df
+
+def compute_conflictinginterpretations(df):
+    conflict_dict = {}
+    for vid, group in df.groupby('variationid'):
+        unique_sigs = set(group['clinsigsimple'].dropna())
+        # Αν έχει πάνω από μία διαφορετική κατηγορία, σημαίνει σύγκρουση
+        conflict_dict[vid] = len(unique_sigs) > 1
+    df['conflictinginterpretations'] = df['variationid'].map(conflict_dict)
+    return df
+
+def convert_pipe_string_to_list(s):
+    if pd.isna(s) or s == 'na' or s == '':
+        return []
+    return s.split('|')
+
 
 def main():
     conn = psycopg2.connect(**DB_CONFIG)
@@ -365,9 +454,12 @@ def main():
         
         df_final = process_clinvar_data(variant_gz)
         df_final = apply_acmg_criteria(df_final)
+        # Εδώ προσθέτουμε τις νέες στήλες clinsigsimple & conflictinginterpretations
+        df_final = simplify_clinical_significance(df_final)
+        df_final = compute_conflictinginterpretations(df_final)
 
         # Add molecular consequence information
-        mol_consequence = df_final['Name'].apply(categorize_variant_name).apply(pd.Series)
+        mol_consequence = df_final['name'].apply(categorize_variant_name).apply(pd.Series)
         df_final = pd.concat([df_final, mol_consequence], axis=1)
 
         # Δημιουργία υποστηρικτικών ομάδων grouping
@@ -387,10 +479,25 @@ def main():
           # Verify groups before processing
         print(f"Group sizes - same_c: {len(same_c)}, same_p: {len(same_p)}, same_pos: {len(same_pos)}")
         
-        # Process groups
-        same_c_groups = split_by_significance(same_c)
-        same_p_groups = split_by_significance(same_p)
-        same_pos_groups = split_by_significance(same_pos)
+        # Process groups safely
+        if same_c.empty:
+            print("same_c είναι κενό DataFrame, παραλείπουμε split_by_significance για same_c")
+            same_c_groups = {'Pathogenic': same_c, 'Benign': same_c, 'VUS': same_c}
+        else:
+            same_c_groups = split_by_significance(same_c)
+
+        if same_p.empty:
+            print("same_p είναι κενό DataFrame, παραλείπουμε split_by_significance για same_p")
+            same_p_groups = {'Pathogenic': same_p, 'Benign': same_p, 'VUS': same_p}
+        else:
+            same_p_groups = split_by_significance(same_p)
+
+        if same_pos.empty:
+            print("same_pos είναι κενό DataFrame, παραλείπουμε split_by_significance για same_pos")
+            same_pos_groups = {'Pathogenic': same_pos, 'Benign': same_pos, 'VUS': same_pos}
+        else:
+            same_pos_groups = split_by_significance(same_pos)
+
         support_tables = build_acmg_support_tables(same_c_groups, same_p_groups, same_pos_groups)
 
         # Mark and combine criteria
@@ -409,16 +516,23 @@ def main():
             axis=1
         )
 
+        if 'rcvaccession' in df_final.columns:
+            df_final['rcvaccession'] = df_final['rcvaccession'].apply(convert_pipe_string_to_list)
+        
         # Εισαγωγή στη βάση
         print("Inserting to database...")
         insert_to_database(conn, df_final)
         print("Ολοκληρώθηκε η επεξεργασία!")
+
+
     except Exception as e:
         print(f"Error occurred: {str(e)}")
         traceback.print_exc()
 
     finally:
         conn.close()
+        if os.path.exists(variant_gz):
+            os.remove(variant_gz)
 
 if __name__ == "__main__":
     main()
