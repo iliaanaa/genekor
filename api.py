@@ -44,7 +44,7 @@ def calculate_pp5_bp6_from_summary(variants):
 
 
 
-@app.get("/acmg_criteria")
+@app.get("/acmg_criteria_bp6_pp5")
 def get_acmg_criteria(gene: str = Query(..., description="Γονίδιο π.χ. KLHL10")):
     conn = None
     try:
@@ -123,37 +123,6 @@ def get_variant_counts(
     finally:
         if conn:
             conn.close()
-
-@app.get("/summary")
-def summary_by_consequence(
-    gene: str = Query(..., description="Γονίδιο π.χ. KLHL10")
-):
-    """
-    Επιστρέφει πίνακα με πλήθος παραλλαγών ανά τύπο (π.χ. missense, nonsense, frameshift) για το συγκεκριμένο γονίδιο.
-    """
-    conn = None
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        cur.execute("""
-            SELECT molecular_consequence, COUNT(*) as count
-            FROM gene_variants
-            WHERE gene_symbol = %s
-            GROUP BY molecular_consequence
-            ORDER BY count DESC;
-        """, (gene,))
-
-        results = cur.fetchall()
-        summary = {row['molecular_consequence']: row['count'] for row in results}
-        return {"gene": gene, "summary": summary}
-
-    except Exception as e:
-        return {"error": str(e)}
-    finally:
-        if conn:
-            conn.close()
-
 
 # 1. Summary by molecular consequence
 @app.get("/summary")
