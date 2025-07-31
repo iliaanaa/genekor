@@ -24,8 +24,24 @@ DB_CONFIG={
 def health_check():
     return{"status":"clinvar api is running"}
 
+# --- NEW --- #
+@app.get("/user_classify_variant")  
+def user_classify_variant(
+    gene: str = Query(..., description="Gene symbol (e.g., BRCA1)"),
+    c_hgvs: str = Query(..., description="c.HGVS notation (e.g., c.123G>T)"),
+    p_hgvs: Optional[str] = Query(None, description="Optional p.HGVS notation (e.g., p.Val12Cys)")
+):
+    user_gene = gene.strip()
+    user_c_hgvs = c_hgvs.strip()
+    user_p_hgvs = p_hgvs.strip() if p_hgvs else None
 
-
+    return {
+        "message": "Variant input received.",
+        "gene": user_gene,
+        "c.HGVS": user_c_hgvs,
+        "p.HGVS": user_p_hgvs
+    }
+    # ---  NEW --- #
 def calculate_pp5_bp6_from_summary(variants):
     """
     Υπολογισμός PP5 / BP6 από variant summary:
