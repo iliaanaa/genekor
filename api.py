@@ -24,24 +24,53 @@ DB_CONFIG={
 def health_check():
     return{"status":"clinvar api is running"}
 
-# --- NEW --- #
 @app.get("/user_classify_variant")  
 def user_classify_variant(
     gene: str = Query(..., description="Gene symbol (e.g., BRCA1)"),
     c_hgvs: str = Query(..., description="c.HGVS notation (e.g., c.123G>T)"),
     p_hgvs: Optional[str] = Query(None, description="Optional p.HGVS notation (e.g., p.Val12Cys)")
 ):
-    user_gene = gene.strip()
-    user_c_hgvs = c_hgvs.strip()
-    user_p_hgvs = p_hgvs.strip() if p_hgvs else None
+    conn = None 
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    return {
-        "message": "Variant input received.",
-        "gene": user_gene,
-        "c.HGVS": user_c_hgvs,
-        "p.HGVS": user_p_hgvs
-    }
-    # ---  NEW --- #
+        query = """
+        SELECT * 
+        FROM gene_variants
+        WHERE gene_symbol = %s AND c_hgvs = %s
+        """
+        params = [gene.strip(), c_hgvs.strip()]
+        cur.execute(query, params)
+        results = cur.fetchall()
+
+        if not results:
+            return{"error": f"No variant found for gene '{gene}' and c.HGVS '{c_hgvs}'"}
+        
+        variant = results[0]
+        variant_summary ={
+            "gene": variant.get("gene symbol"),
+            "c.HGVS": variant.get("c_hgvs"),
+            "p.HGVS": p_hgvs.strip() if p_hgvs else variant.get("p_hgvs"),
+            "protein_pos": variant.get("protein_pos"),
+            "molecular_consequence": variant.get("molecular_consequence"),
+            "clinical_significance": variant.get("clinical_significance"),
+            "review_status": variant.get("review_status"),
+              "dbSNP": variant.get("rsid"),
+            "other_fields": {k: v for k, v in variant.items() if k not in [
+                "gene_symbol", "c_hgvs", "p_hgvs", "protein_pos", 
+                "molecular_consequence", "clinical_significance", 
+                "review_status", "rsid"
+            ]}
+        }
+
+        return variant_summary
+    except Exception as e:
+        return{"error": str(e)}
+    finally:
+        if conn:
+            conn.close()
+            
 def calculate_pp5_bp6_from_summary(variants):
     """
     Υπολογισμός PP5 / BP6 από variant summary:
