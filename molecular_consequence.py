@@ -4,10 +4,9 @@ DNA and protein included
 Reads HGVS_c and HGVS_p and categorizes each variant by molecular consequence.
 """
 
-import csv
 import re
-from collections import defaultdict
 
+# Molecular consequence classifiers.
 def consequence(hgvs_p):
     if not hgvs_p or hgvs_p.startswith('p.?'):
         return 'unknown'
@@ -73,3 +72,46 @@ def variant_consequence(hgvs_c, hgvs_p):
         'protein_consequence': consequence(hgvs_p),
         'dna_consequence': consequence_dna(hgvs_c)
     }
+
+# Variant name parser.
+def categorize_variant_name(name: str) -> dict:
+    """
+    Parses variant 'Name' field to extract HGVS_c and HGVS_p,
+    then classifies moleucular consequence using variant_consequence().
+    """
+
+    result = {
+        'molecular_consequence': None,
+        'DNA_variant': None,
+        'Protein_variant': None,
+        'Other_variant': None
+    }
+
+    if not name or not isinstance(name, str):
+        result['molecular_consequence'] = 'Other'
+        result['Other_variant'] = name
+        return result
+
+    # Extract HGVS notation.
+    dna_match = re.search(r'(c.[^()\s]+)', name)
+    protein_match = re.search(r'(p\.[^()\s]+)', name)
+
+    hgvs_c = dna_match.group(1) if dna_match else None
+    hgvs_p = dna_match.group(1) if protein_match else None
+
+    # Get detailed consequences.
+    consequences = variant_consequence(hgvs_c, hgvs_p)
+
+    # Fill result dictionary.
+    if hgvs_p:
+        result['DNA_variant'] = hgvs_c
+        result['Protein_variant'] = hgvs_p
+        result['molecular_consequence'] = consequences['protein_consequence']
+    elif hgvs_c:
+        result['DNA_variant'] = hgvs_c
+        result['molecular_consequence'] = consequences['dna_consequence']
+    else:
+        result['molecular_consequence'] = 'Other'
+        result['Other_variant'] = name
+
+    return result
