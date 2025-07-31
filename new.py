@@ -73,7 +73,8 @@ def extract_protein_pos(hgvs_p: str) -> Optional[int]:
     """Εξαγωγή θέσης πρωτεΐνης (ίδια με pipeline)"""
     if not hgvs_p:
         return None
-    match = re.search(r'[A-Z][a-z]{2}(\d+)[A-Z][a-z]{2}', hgvs_p)
+   #match = re.search(r'[A-Z][a-z]{2}(\d+)[A-Z][a-z]{2}', hgvs_p)
+    match = re.search(r'[A-Z][a-z]{2}(\d+)', hgvs_p)
     return int(match.group(1)) if match else None
 
 def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
@@ -98,8 +99,8 @@ def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
     )
 
     # Rename clinical significance column to your preferred format
-    if 'clinicalsignificance' in df.columns:
-        df = df.rename(columns={'clinicalsignificance': 'clinical_significance'})
+    if 'clinical_significance' in df.columns:
+        df = df.rename(columns={'clinicalsignificance': 'clinicalsignificance'})
 
     print("Στήλες διαθέσιμες στο αρχείο:")
     print(df.columns.tolist())
@@ -164,15 +165,18 @@ def apply_acmg_criteria(df: pd.DataFrame) -> pd.DataFrame:
             criteria.append('PM5')
 
         # PP5
-        if (row['clinical_significance'] == 'Pathogenic' 
-                and row.get('NumberSubmitters', 0) > 1 
-                and row.get('conflictinginterpretations', '.') == '.'):
+        if (row['clinicalsignificance'] == 'Pathogenic' 
+                and row.get('NumberSubmitters', 0) >= 3
+                and row.get('conflictinginterpretations', '.') == '.'
+                and row.get('submittercategories', '') in ["2", "3"]):
+                
             criteria.append('PP5')
 
         # BP6
-        if (row['clinical_significance'] == 'Benign' 
-                and row.get('NumberSubmitters', 0) > 1 
-                and row.get('conflictinginterpretations', '.') == '.'):
+        if (row['clinicalsignificance'] == 'Benign' 
+                and row.get('NumberSubmitters', 0) >= 3 
+                and row.get('conflictinginterpretations', '.') == '.'
+                and row.get('submittercategories', '') in ["2", "3"]):
             criteria.append('BP6')
 
         return criteria 
@@ -192,7 +196,7 @@ def variant_assortments(df, ref_gene, ref_c, ref_p=None, ref_pos=None):
 
 def split_by_significance(df):
     """Ομαδοποίηση κατά κλινική σημασία"""
-    if df.empty or 'clinical_significance' not in df.columns:
+    if df.empty or 'clinicalsignificance' not in df.columns:
         print("Warning: Empty DataFrame or missing clinical_significance column")
         print("Available columns:", df.columns.tolist())
         return {
@@ -202,9 +206,9 @@ def split_by_significance(df):
         }
     
     return {
-        'Pathogenic': df[df['clinical_significance'].str.contains('Pathogenic', na=False)],
-        'Benign': df[df['clinical_significance'].str.contains('Benign', na=False)],
-        'VUS': df[df['clinical_significance'].str.contains('Uncertain significance', na=False)]
+        'Pathogenic': df[df['clinicalsignificance'].str.contains('Pathogenic', na=False)],
+        'Benign': df[df['clinicalsignificance'].str.contains('Benign', na=False)],
+        'VUS': df[df['clinicalsignificance'].str.contains('Uncertain significance', na=False)]
     }
 
 def build_acmg_support_tables(same_c_groups, same_p_groups, same_pos_groups):
@@ -264,7 +268,7 @@ def insert_to_database(conn, df):
             cur.execute("""
             INSERT INTO gene_variants (
                 variation_id, gene_symbol, hgvs_c, hgvs_p, molecular_consequence,
-                clinical_significance, review_status, phenotype_list, assembly,
+                clinicalsignificance, review_status, phenotype_list, assembly,
                 chromosome, start_pos, end_pos, reference_allele, alternate_allele,
                 acmg_criteria, conflicting_interpretations, rcvaccession, protein_pos
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -273,7 +277,7 @@ def insert_to_database(conn, df):
                 hgvs_c = EXCLUDED.hgvs_c,
                 hgvs_p = EXCLUDED.hgvs_p,
                 molecular_consequence = EXCLUDED.molecular_consequence,
-                clinical_significance = EXCLUDED.clinical_significance,
+                clinicalsignificance = EXCLUDED.clinicalsignificance,
                 review_status = EXCLUDED.review_status,
                 phenotype_list = EXCLUDED.phenotype_list,
                 assembly = EXCLUDED.assembly,
@@ -289,7 +293,7 @@ def insert_to_database(conn, df):
                 last_updated = CURRENT_TIMESTAMP;
             """, (
                 row['variationid'], row['genesymbol'], row['hgvs_c'], row['hgvs_p'],
-                row['molecular_consequence'], row['clinical_significance'], row['reviewstatus'],
+                row['molecular_consequence'], row['clinicalsignificance'], row['reviewstatus'],
                 row['phenotypelist'], row['assembly'], row['chromosome'], row['start'], row['stop'],
                 row['referenceallele'], row['alternateallele'], Json(row['acmg_criteria']),
                 Json(row['conflictinginterpretations']), row['rcvaccession'], row['protein_pos']
@@ -306,12 +310,12 @@ def group_based_acmg(row: pd.Series, df: pd.DataFrame) -> str:
 
     # PS1: Ίδιο πρωτεϊνικό αποτέλεσμα (HGVS_p) αλλά διαφορετικό HGVS_c, με Pathogenic απόφαση
     same_p = df[(df['hgvs_p'] == row['hgvs_p']) & (df['hgvs_c'] != row['hgvs_c'])]
-    if not same_p.empty and any(same_p['clinical_significance'].str.contains('Pathogenic')):
+    if not same_p.empty and any(same_p['clinicalsignificance'].str.contains('Pathogenic')):
         criteria.append('PS1')
 
     # PM5: Ίδια θέση (protein_pos), διαφορετικό HGVS_p, αλλά κάποια απόφαση Pathogenic
     same_pos = df[(df['protein_pos'] == row['protein_pos']) & (df['hgvs_p'] != row['hgvs_p'])]
-    if not same_pos.empty and any(same_pos['clinical_significance'].str.contains('Pathogenic')):
+    if not same_pos.empty and any(same_pos['clinicalsignificance'].str.contains('Pathogenic')):
         criteria.append('PM5')
 
     return "; ".join(criteria)
@@ -337,11 +341,11 @@ def apply_acmg_criteria_to_row(row):
         criteria.append('PM5')
 
     # PP5
-    if row.get('clinical_significance') == 'Pathogenic' and row.get('NumberSubmitters', 0) > 1 and row.get('conflictinginterpretations') == '.':
+    if row.get('clinicalsignificance') == 'Pathogenic' and row.get('NumberSubmitters', 0) > 1 and row.get('conflictinginterpretations') == '.':
         criteria.append('PP5')
 
     # BP6
-    if row.get('clinical_significance') == 'Benign' and row.get('NumberSubmitters', 0) > 1 and row.get('conflictinginterpretations') == '.':
+    if row.get('clinicalsignificance') == 'Benign' and row.get('NumberSubmitters', 0) > 1 and row.get('conflictinginterpretations') == '.':
         criteria.append('BP6')
 
     return criteria
@@ -399,9 +403,9 @@ def split_by_significance(df):
         }
 
     return {
-        'Pathogenic': df[df['clinical_significance'].str.contains('Pathogenic', na=False)],
-        'Benign': df[df['clinical_significance'].str.contains('Benign', na=False)],
-        'VUS': df[df['clinical_significance'].str.contains('Uncertain significance', na=False)]
+        'Pathogenic': df[df['clinicalsignificance'].str.contains('Pathogenic', na=False)],
+        'Benign': df[df['clinicalsignificance'].str.contains('Benign', na=False)],
+        'VUS': df[df['clinicalsignificance'].str.contains('Uncertain significance', na=False)]
     }
 
 
@@ -425,7 +429,7 @@ def simplify_clinical_significance(df):
             return 'conflicting'
         else:
             return 'other'
-    df['clinsigsimple'] = df['clinical_significance'].apply(map_significance)
+    df['clinsigsimple'] = df['clinicalsignificance'].apply(map_significance)
     return df
 
 def compute_conflictinginterpretations(df):
@@ -443,6 +447,55 @@ def convert_pipe_string_to_list(s):
     return s.split('|')
 
 
+def get_reliable_variation_ids_from_variant_summary(df: pd.DataFrame) -> set:
+    """
+    Επιστρέφει το σύνολο αξιόπιστων VariationIDs:
+    - είτε αξιολογήθηκαν από expert panel
+    - είτε έχουν ≥3 submitters σε SubmitterCategories 2 ή 3 που συμφωνούν και δεν έχουν conflicts
+    """
+    # Μετατροπή σε αριθμητικά (ή NaN αν αποτύχει)
+    df['submittercategories'] = pd.to_numeric(df['submittercategories'], errors='coerce')
+    df['variationid'] = pd.to_numeric(df['variationid'], errors='coerce')
+
+    # Drop γραμμές με NaN στα βασικά πεδία
+    df = df.dropna(subset=['variationid', 'submittercategories'])
+
+    # --- Expert Panel ---
+    expert_panel_ids = set(
+        df[df['reviewstatus'].str.lower() == 'reviewed by expert panel']['variationid']
+    )
+
+    # --- Αξιόπιστα μη-expert ---
+    df_valid = df[
+        (~df['variationid'].isin(expert_panel_ids)) &
+        (df['submittercategories'].isin([2, 3])) &
+        (~df['clinicalsignificance'].str.lower().str.contains("conflict"))
+    ]
+
+    grouped = (
+        df_valid
+        .groupby(['variationid', 'clinicalsignificance'])
+        .size()
+        .reset_index(name='count')
+    )
+
+    reliable_non_expert = grouped[grouped['count'] >= 3]
+
+    consistent_ids = (
+        reliable_non_expert
+        .groupby('variationid')['clinicalsignificance']
+        .nunique()
+        .reset_index()
+    )
+    consistent_ids = consistent_ids[consistent_ids['clinicalsignificance'] == 1]['variationid']
+
+    reliable_ids = expert_panel_ids.union(set(consistent_ids))
+
+    print(f"Aksiopista VariationIDs: {len(reliable_ids)}")
+    return reliable_ids
+
+
+
 def main():
     conn = psycopg2.connect(**DB_CONFIG)
     create_tables(conn)
@@ -454,6 +507,7 @@ def main():
         
         df_final = process_clinvar_data(variant_gz)
         df_final = apply_acmg_criteria(df_final)
+
         # Εδώ προσθέτουμε τις νέες στήλες clinsigsimple & conflictinginterpretations
         df_final = simplify_clinical_significance(df_final)
         df_final = compute_conflictinginterpretations(df_final)
@@ -519,6 +573,19 @@ def main():
         if 'rcvaccession' in df_final.columns:
             df_final['rcvaccession'] = df_final['rcvaccession'].apply(convert_pipe_string_to_list)
         
+
+           # Φιλτράρισμα βάσει αξιόπιστων VariationIDs
+        print("Εύρεση αξιόπιστων VariationIDs...")
+        reliable_ids = get_reliable_variation_ids_from_variant_summary(df_final)
+        df_final = df_final[df_final['variationid'].isin(reliable_ids)]
+        print(f"Μετά το φιλτράρισμα: {len(df_final)} μεταλλάξεις")
+
+        # Προαιρετικά: αποθήκευση των αξιόπιστων IDs
+        with open("reliable_variation_ids.txt", "w") as f:
+            for vid in sorted(reliable_ids):
+                f.write(f"{int(vid)}\n")
+
+
         # Εισαγωγή στη βάση
         print("Inserting to database...")
         insert_to_database(conn, df_final)

@@ -202,10 +202,10 @@ def variants_by_position(gene: str, min_pos: Optional[int] = None, max_pos: Opti
         query = "SELECT * FROM gene_variants WHERE gene_symbol = %s"
         params = [gene]
         if min_pos is not None:
-            query += " AND protein_pos >= %s"
+            query += " AND start_pos >= %s"
             params.append(min_pos)
         if max_pos is not None:
-            query += " AND protein_pos <= %s"
+            query += " AND end_pos <= %s"
             params.append(max_pos)
         cur.execute(query, tuple(params))
         return cur.fetchall()
