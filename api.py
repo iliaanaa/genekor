@@ -4,6 +4,7 @@ import psycopg2
 import pandas as pd
 from psycopg2.extras import RealDictCursor
 import json
+from collections import Counter
 
 app=FastAPI()
 
@@ -22,6 +23,60 @@ DB_CONFIG={
 @app.get("/")
 def health_check():
     return{"status":"clinvar api is running"}
+
+
+
+def calculate_pp5_bp6_from_summary(variants):
+    """
+    Υπολογισμός PP5 / BP6 από variant summary:
+    - Δεν κοιτάμε τα ονόματα των submitters
+    - Χρησιμοποιούμε μόνο count + consistency
+    """
+    significance_counts = Counter([v['clinical_significance'] for v in variants if v['clinical_significance']])
+
+    # Υπολογισμός PP5
+    pp5 = significance_counts.get("Pathogenic", 0) >= 2 and len(significance_counts) == 1
+
+    # Υπολογισμός BP6
+    bp6 = significance_counts.get("Benign", 0) >= 2 and len(significance_counts) == 1
+
+    return pp5, bp6
+
+
+
+@app.get("/acmg_criteria_bp6_pp5")
+def get_acmg_criteria(gene: str = Query(..., description="Γονίδιο π.χ. KLHL10")):
+    conn = None
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        cur.execute("""
+            SELECT clinical_significance
+            FROM gene_variants
+            WHERE gene_symbol = %s;
+        """, (gene,))
+        variants = cur.fetchall()
+
+        if not variants:
+            return {"error": f"Δεν βρέθηκαν μεταλλάξεις για το γονίδιο {gene}"}
+
+        pp5, bp6 = calculate_pp5_bp6_from_summary(variants)
+        conflict_score = int(pp5) + int(bp6)
+
+        return {
+            "gene": gene,
+            "PP5": pp5,
+            "BP6": bp6,
+            "conflict_score": conflict_score
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
 
 @app.get("/variant_counts")
 def get_variant_counts(
@@ -68,37 +123,6 @@ def get_variant_counts(
     finally:
         if conn:
             conn.close()
-
-@app.get("/summary")
-def summary_by_consequence(
-    gene: str = Query(..., description="Γονίδιο π.χ. KLHL10")
-):
-    """
-    Επιστρέφει πίνακα με πλήθος παραλλαγών ανά τύπο (π.χ. missense, nonsense, frameshift) για το συγκεκριμένο γονίδιο.
-    """
-    conn = None
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        cur.execute("""
-            SELECT molecular_consequence, COUNT(*) as count
-            FROM gene_variants
-            WHERE gene_symbol = %s
-            GROUP BY molecular_consequence
-            ORDER BY count DESC;
-        """, (gene,))
-
-        results = cur.fetchall()
-        summary = {row['molecular_consequence']: row['count'] for row in results}
-        return {"gene": gene, "summary": summary}
-
-    except Exception as e:
-        return {"error": str(e)}
-    finally:
-        if conn:
-            conn.close()
-
 
 # 1. Summary by molecular consequence
 @app.get("/summary")
