@@ -99,3 +99,77 @@ df_final = df_final[df_final['VariationID'].isin(reliable_ids)]
 
     return all_reliable
 """
+
+
+
+
+''' ΒΕΡΣΙΟΝ 2'''
+def get_reliable_variation_ids_from_variant_summary(df: pd.DataFrame) -> set:
+    """
+    Επιστρέφει το σύνολο αξιόπιστων VariationIDs:
+    - είτε αξιολογήθηκαν από expert panel
+    - είτε έχουν ≥3 submitters σε SubmitterCategories 2 ή 3 που συμφωνούν και δεν έχουν conflicts
+    """
+    # Μετατροπή σε αριθμητικά (ή NaN αν αποτύχει)
+    df['SubmitterCategories'] = pd.to_numeric(df['SubmitterCategories'], errors='coerce')
+    df['VariationID'] = pd.to_numeric(df['VariationID'], errors='coerce')
+
+    # Drop γραμμές με NaN στα βασικά πεδία
+    df = df.dropna(subset=['VariationID', 'SubmitterCategories'])
+
+    # --- Expert Panel ---
+    expert_panel_ids = set(
+        df[df['ReviewStatus'].str.lower() == 'reviewed by expert panel']['VariationID']
+    )
+
+    # --- Αξιόπιστα μη-expert ---
+    df_valid = df[
+        (~df['VariationID'].isin(expert_panel_ids)) &
+        (df['SubmitterCategories'].isin([2, 3])) &
+        (~df['ClinicalSignificance'].str.lower().str.contains("conflict"))
+    ]
+
+    grouped = (
+        df_valid
+        .groupby(['VariationID', 'ClinicalSignificance'])
+        .size()
+        .reset_index(name='count')
+    )
+
+    reliable_non_expert = grouped[grouped['count'] >= 3]
+
+    consistent_ids = (
+        reliable_non_expert
+        .groupby('VariationID')['ClinicalSignificance']
+        .nunique()
+        .reset_index()
+    )
+    consistent_ids = consistent_ids[consistent_ids['ClinicalSignificance'] == 1]['VariationID']
+
+    reliable_ids = expert_panel_ids.union(set(consistent_ids))
+
+    print(f"Aksiopista VariationIDs: {len(reliable_ids)}")
+    return reliable_ids
+
+'''
+
+
+Σημείο	                            Τι αλλάζει	                Γιατί είναι καλύτερο
+
+str.lower() στο ReviewStatus	Ελέγχει με πεζά γράμματα.	        Κάνει τον έλεγχο πιο ανθεκτικό σε διαφορετικές κεφαλαιοποιήσεις π.χ. 
+                                                                    "Reviewed by expert panel" vs "reviewed by expert panel".
+Διάκριση φάσεων
+valid → grouped → consistent	Η ροή είναι πιο καθαρή: πρώτα φιλτράρουμε,
+                            μετά μετράμε, μετά ελέγχουμε τη συνέπεια.	        Καλύτερη αναγνωσιμότητα και εύκολη συντήρηση.
+Δεν υπάρχουν αχρείαστα κομμάτια (όπως το counts_per_id = ...)		        Το κάνει πιο καθαρό και συμπαγές, με το ίδιο αποτέλεσμα.
+
+
+
+                    Πρώτη Έκδοση	                    Δεύτερη Έκδοση
+
+Έλεγχος expert panel	Ακριβής αλλά case-sensitive	        Case-insensitive
+Λογική αξιοπιστίας	                  Ορθή	            Ίδια, πιο καθαρά οργανωμένη
+Αναγνωσιμότητα	            Καλή	                    Καλύτερη
+Επεκτασιμότητα	        Μέτρια	            Εύκολη να επεκταθεί (π.χ. να προσθέσεις και p-value checks)
+
+'''
