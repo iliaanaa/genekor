@@ -7,8 +7,6 @@ import os
 from typing import Dict, List, Optional, Tuple
 from psycopg2.extras import Json
 import subprocess
-from collections import defaultdict
-
 
 
 
@@ -44,8 +42,6 @@ def create_tables(conn: psycopg2.extensions.connection) -> None:
             reference_allele TEXT,
             alternate_allele TEXT,
             acmg_criteria JSONB,
-            acmg_from_grouping TEXT,
-            acmg_combined_criteria TEXT,
             conflicting_interpretations JSONB,
             rcvaccession TEXT[],
             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -204,7 +200,7 @@ def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
 
     return df
 
-'''
+
 def apply_acmg_criteria(df: pd.DataFrame) -> pd.DataFrame:
     """Εφαρμογή ACMG κριτηρίων (ΑΚΡΙΒΩΣ όπως στο pipeline)"""
     known_pathogenic = {
@@ -247,7 +243,7 @@ def apply_acmg_criteria(df: pd.DataFrame) -> pd.DataFrame:
     # Εφαρμογή σε όλο το dataframe
     df['ACMG_criteria'] = df.apply(_apply_criteria, axis=1)
     return df
-'''
+
 
 def variant_assortments(df, ref_gene, ref_c, ref_p=None, ref_pos=None):
     """Εύρεση παρόμοιων μεταλλάξεων"""
@@ -273,7 +269,7 @@ def split_by_significance(df):
         'Benign': df[df['clinicalsignificance'].str.contains('Benign', na=False)],
         'VUS': df[df['clinicalsignificance'].str.contains('Uncertain significance', na=False)]
     }
-'''
+
 def build_acmg_support_tables(same_c_groups, same_p_groups, same_pos_groups):
     """Κατασκευή πινάκων υποστήριξης ACMG (με έλεγχο ύπαρξης δεδομένων και στηλών)"""
 
@@ -297,38 +293,8 @@ def build_acmg_support_tables(same_c_groups, same_p_groups, same_pos_groups):
         'PS1': ps1_df,
         'PM5': pm5_df
     }
-'''
-def build_acmg_support_tables(df):
-    """Φτιάχνει υποστηρικτικούς πίνακες grouping για PS1 / PM5 / PP5 / BP6"""
-    df_pathogenic = df[df['clinicalsignificance'].str.contains('pathogenic', case=False, na=False)]
-
-    same_c_groups = defaultdict(list)
-    same_p_groups = defaultdict(list)
-    same_pos_groups = defaultdict(list)
-
-    for _, row in df_pathogenic.iterrows():
-        gene = row['genesymbol']
-        hgvs_c = row['hgvs_c']
-        hgvs_p = row['hgvs_p']
-        prot_pos = row.get('protein_pos')
-
-        if gene and hgvs_c:
-            same_c_groups[gene + ':' + hgvs_c].append(row)
-
-        if gene and hgvs_p:
-            same_p_groups[gene + ':' + hgvs_p].append(row)
-
-        if gene and prot_pos:
-            same_pos_groups[gene + ':' + str(prot_pos)].append(row)
-
-    return {
-        'same_c_groups': same_c_groups,
-        'same_p_groups': same_p_groups,
-        'same_pos_groups': same_pos_groups,
-    }
 
 
-'''
 def mark_acmg_criteria(df, support):
     """Σήμανση variants με βάση τα groups (ίδια με pipeline)"""
     def _determine_criteria(row):
@@ -353,64 +319,6 @@ def mark_acmg_criteria(df, support):
     
     df['acmg_from_grouping'] = df.apply(_determine_criteria, axis=1)
     return df
-'''
-
-def mark_acmg_criteria(row, support_tables):
-    criteria = []
-
-    gene = row['genesymbol']
-    hgvs_c = row['hgvs_c']
-    hgvs_p = row['hgvs_p']
-    prot_pos = row.get('protein_pos')
-
-#PP5 BP6
-    if gene and hgvs_c:
-        group = support_tables['same_c_groups'].get(f"{gene}:{hgvs_c}", [])
-        if any('pathogenic' in v.get('clinicalsignificance', '').lower() for v in group):
-            criteria.append("PP5")  # ή BP6 για benign
-        if any('benign' in v.get('clinicalsignificance', '').lower() for v in group):
-            criteria.append("BP6")
-
-
-#PS1
-    if gene and hgvs_p:
-        group = support_tables['same_p_groups'].get(f"{gene}:{hgvs_p}", [])
-        if any(v.get('clinicalsignificance', '').lower() in ['pathogenic', 'likely pathogenic'] for v in group):
-            criteria.append("PS1")
-
-
-
-    # PM5: Novel missense με διαφορετικό path/likely path missense στην ίδια θέση
-    if gene and prot_pos:
-        # Αρχικά παίρνουμε όλα τα variants στην ίδια θέση
-        group = support_tables['same_pos_groups'].get(f"{gene}:{str(prot_pos)}", [])
-        
-        # Φίλτρο για missense variants που είναι path ή likely path
-        path_missense_variants = [
-            v for v in group
-            if v.get('variant_type', '').lower() == 'missense'
-            and v.get('clinicalsignificance', '').lower() in ['pathogenic']
-        ]
-        variant_type = row.get('variant_type', None)
-
-        
-        # Για να είναι PM5 πρέπει η τωρινή παραλλαγή να είναι novel missense (δηλαδή missense και όχι στα path_missense_variants)
-        is_novel_missense = (
-            variant_type == 'missense' and
-            all(v.get('hgvs_p') != hgvs_p for v in path_missense_variants)
-        )
-        
-        if is_novel_missense and len(path_missense_variants) > 0:
-            criteria.append("PM5")
-
-
-    #if gene and prot_pos:
-     #   group = support_tables['same_pos_groups'].get(f"{gene}:{str(prot_pos)}", [])
-      #  if any('pathogenic' in v.get('clinicalsignificance', '').lower() for v in group):
-        #    criteria.append("PM5")
-
-    return criteria
-
 
 def insert_to_database(conn, df):
     """Εισαγωγή στη βάση (ίδια με pipeline)"""
@@ -421,8 +329,8 @@ def insert_to_database(conn, df):
                 variation_id, gene_symbol, hgvs_c, hgvs_p, molecular_consequence,
                 clinicalsignificance, review_status, phenotype_list, assembly,
                 chromosome, start_pos, end_pos, reference_allele, alternate_allele,
-                acmg_criteria, acmg_from_grouping, acmg_combined_criteria, conflicting_interpretations, rcvaccession, protein_pos
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                acmg_criteria, conflicting_interpretations, rcvaccession, protein_pos
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (variation_id) DO UPDATE SET
                 gene_symbol = EXCLUDED.gene_symbol,
                 hgvs_c = EXCLUDED.hgvs_c,
@@ -438,8 +346,6 @@ def insert_to_database(conn, df):
                 reference_allele = EXCLUDED.reference_allele,
                 alternate_allele = EXCLUDED.alternate_allele,
                 acmg_criteria = EXCLUDED.acmg_criteria,
-                acmg_from_grouping = EXCLUDED.acmg_from_grouping,
-                acmg_combined_criteria = EXCLUDED.acmg_combined_criteria,
                 conflicting_interpretations = EXCLUDED.conflicting_interpretations,
                 rcvaccession = EXCLUDED.rcvaccession,
                 protein_pos = EXCLUDED.protein_pos,
@@ -448,8 +354,7 @@ def insert_to_database(conn, df):
                 row['variationid'], row['genesymbol'], row['hgvs_c'], row['hgvs_p'],
                 row['molecular_consequence'], row['clinicalsignificance'], row['reviewstatus'],
                 row['phenotypelist'], row['assembly'], row['chromosome'], row['start'], row['stop'],
-                row['referenceallele'], row['alternateallele'], Json(row['acmg_criteria']),row.get('acmg_from_grouping'),
-                row.get('acmg_combined_criteria'),
+                row['referenceallele'], row['alternateallele'], Json(row['acmg_criteria']),
                 Json(row['conflictinginterpretations']), row['rcvaccession'], row['protein_pos']
             ))
         conn.commit()
@@ -474,7 +379,6 @@ def group_based_acmg(row: pd.Series, df: pd.DataFrame) -> str:
 
     return "; ".join(criteria)
 
-'''
 def apply_acmg_criteria_to_row(row):
     """Επιστρέφει τα ACMG criteria (PS1, PM5, PP5, BP6) για μία γραμμή"""
     known_pathogenic = {
@@ -504,7 +408,7 @@ def apply_acmg_criteria_to_row(row):
         criteria.append('BP6')
 
     return criteria
-'''
+
 '''
 def categorize_variant_name(name: str) -> dict:
     """
@@ -653,41 +557,77 @@ def get_reliable_variation_ids_from_variant_summary(df: pd.DataFrame) -> set:
     return reliable_ids
 
 
+
 def main():
     conn = psycopg2.connect(**DB_CONFIG)
     create_tables(conn)
-
+    
     try:
         print("Ξεκίνημα script...")
         variant_gz = "variant_summary.txt.gz"
         urllib.request.urlretrieve(CLINVAR_VARIANT_URL, variant_gz)
-
+        
         df_final = process_clinvar_data(variant_gz)
+        df_final = apply_acmg_criteria(df_final)
 
-        # Απλοποίηση του clinical significance και προσθήκη conflicting interpretations
+        # Εδώ προσθέτουμε τις νέες στήλες clinsigsimple & conflictinginterpretations
         df_final = simplify_clinical_significance(df_final)
         df_final = compute_conflictinginterpretations(df_final)
-
+       
         # Υπολογισμός consequences
         df_final['protein_consequence'] = df_final['hgvs_p'].apply(consequence)
         df_final['dna_consequence'] = df_final['hgvs_c'].apply(consequence_dna)
-        df_final['molecular_consequence'] = df_final.apply(combine_consequence, axis=1)
-        df_final['variant_type'] = df_final.apply(combine_consequence, axis=1)  # Εδώ το variant_type
 
-        # Δημιουργία στήλης acmg_from_grouping
+        
+        df_final['molecular_consequence'] = df_final.apply(combine_consequence, axis=1)
+
+       # df_final.to_sql("gene_variants", engine, if_exists="replace", index=False)
+
+        # Δημιουργία υποστηρικτικών ομάδων grouping
         df_final["acmg_from_grouping"] = df_final.apply(
             lambda row: group_based_acmg(row, df_final), axis=1
         )
 
-        # Δημιουργία υποστηρικτικών ομάδων για PS1, PM5, PP5, BP6 με βάση pathogenic μεταλλάξεις
-        print("Χτίσιμο πίνακα υποστήριξης ACMG...")
-        support_tables = build_acmg_support_tables(df_final)
+        # Create support groups for the entire dataframe
+        same_c, same_p, same_pos = variant_assortments(
+            df_final,
+            #ref_gene="KLHL10",
+            ref_gene="TP53",
+            ref_c=None,
+            ref_p=None,
+            ref_pos=None
+        )
 
-        # Εφαρμογή κριτηρίων ACMG σε κάθε σειρά
-        print("Σήμανση ACMG criteria...")
-        df_final["acmg_criteria"] = df_final.apply(lambda row: mark_acmg_criteria(row, support_tables), axis=1)
+          # Verify groups before processing
+        print(f"Group sizes - same_c: {len(same_c)}, same_p: {len(same_p)}, same_pos: {len(same_pos)}")
+        
+        # Process groups safely
+        if same_c.empty:
+            print("same_c είναι κενό DataFrame, παραλείπουμε split_by_significance για same_c")
+            same_c_groups = {'Pathogenic': same_c, 'Benign': same_c, 'VUS': same_c}
+        else:
+            same_c_groups = split_by_significance(same_c)
 
-        # Συνδυασμός όλων των ACMG criteria
+        if same_p.empty:
+            print("same_p είναι κενό DataFrame, παραλείπουμε split_by_significance για same_p")
+            same_p_groups = {'Pathogenic': same_p, 'Benign': same_p, 'VUS': same_p}
+        else:
+            same_p_groups = split_by_significance(same_p)
+
+        if same_pos.empty:
+            print("same_pos είναι κενό DataFrame, παραλείπουμε split_by_significance για same_pos")
+            same_pos_groups = {'Pathogenic': same_pos, 'Benign': same_pos, 'VUS': same_pos}
+        else:
+            same_pos_groups = split_by_significance(same_pos)
+
+        support_tables = build_acmg_support_tables(same_c_groups, same_p_groups, same_pos_groups)
+
+        # Mark and combine criteria
+        print("Marking ACMG criteria...")
+        df_final = mark_acmg_criteria(df_final, support_tables)
+        df_final["acmg_criteria"] = df_final.apply(lambda row: apply_acmg_criteria_to_row(row), axis=1)
+
+        # Combine all ACMG criteria
         print("Combining ACMG criteria...")
         df_final["acmg_combined_criteria"] = df_final.apply(
             lambda row: "; ".join(sorted(
@@ -698,20 +638,27 @@ def main():
             axis=1
         )
 
-        # Μετατροπή του rcvaccession σε λίστα (jsonb)
         if 'rcvaccession' in df_final.columns:
             df_final['rcvaccession'] = df_final['rcvaccession'].apply(convert_pipe_string_to_list)
+        
 
+           # Φιλτράρισμα βάσει αξιόπιστων VariationIDs
         print("Εύρεση αξιόπιστων VariationIDs...")
-        reliable_ids = get_reliable_variation_ids_from_variant_summary(df_final)
-        f_final = df_final[df_final['variationid'].isin(reliable_ids)]
-  
-        print("Μετά το φιλτράρισμα: {} μεταλλάξεις".format(len(df_final)))
+        #reliable_ids = get_reliable_variation_ids_from_variant_summary(df_final)
+        #df_final = df_final[df_final['variationid'].isin(reliable_ids)]
+        print(f"Μετά το φιλτράρισμα: {len(df_final)} μεταλλάξεις")
 
-        # Εισαγωγή στη βάση δεδομένων
+        # Προαιρετικά: αποθήκευση των αξιόπιστων IDs
+       # with open("reliable_variation_ids.txt", "w") as f:
+        #    for vid in sorted(reliable_ids):
+         #       f.write(f"{int(vid)}\n")
+
+
+        # Εισαγωγή στη βάση
         print("Inserting to database...")
         insert_to_database(conn, df_final)
         print("Ολοκληρώθηκε η επεξεργασία!")
+
 
     except Exception as e:
         print(f"Error occurred: {str(e)}")
@@ -722,6 +669,6 @@ def main():
         if os.path.exists(variant_gz):
             os.remove(variant_gz)
 
-
 if __name__ == "__main__":
     main()
+
