@@ -52,14 +52,14 @@ test_subjects ={
     'c.991C>T p.Glu331Ter', # pathogenic & oncogenic, PM5
     'c.990del p.Glu331fs', # pathogenic, PS1, PM5
 
-    'c.951G>A p.Glu317=', # benign/likely benign, PM5
-    'c.951G>T p.Glu317His', # Conflicting classifications, PM5
-    'c.950A>T p.Glu317Leu', # Uncertain significance, PM5
-    'c.950A>G p.Glu317Arg', # Conflicting classifications, PM5
-    'c.950del p.Glu317fs', # pathogenic, PS1, PM5
-    'c.949del p.Glu317fs', # pathogenic, PS1, PM5
-    'c.949C>T p.Glu317Ter', # pathogenic/likely pathogenic &  oncogenic, PM5
-    'c.949C>A p.Glu317Lys', # benign, PM5
+    'c.951G>A p.Gln317=', # benign/likely benign, PM5
+    'c.951G>T p.Gln317His', # Conflicting classifications, PM5
+    'c.950A>T p.Gln317Leu', # Uncertain significance, PM5
+    'c.950A>G p.Gln317Arg', # Conflicting classifications, PM5
+    'c.950del p.Gln317fs', # pathogenic, PS1, PM5
+    'c.949del p.Gln317fs', # pathogenic, PS1, PM5
+    'c.949C>T p.Gln317Ter', # pathogenic/likely pathogenic &  oncogenic, PM5
+    'c.949C>A p.Gln317Lys', # benign, PM5
 
     'c.839_842dup p.Asp281fs', # pathogenic, PS1, PM5
     'c.843C>T p.Asp281=', # benign/likely benign, PM5
