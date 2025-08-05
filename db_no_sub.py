@@ -373,10 +373,20 @@ def mark_acmg_criteria(row, support_tables):
 
 
 #PS1
+    #if gene and hgvs_p:
+     #   group = support_tables['same_p_groups'].get(f"{gene}:{hgvs_p}", [])
+      #  if any(v.get('clinicalsignificance', '').lower() in ['pathogenic', 'likely pathogenic'] for v in group):
+       #     criteria.append("PS1")
     if gene and hgvs_p:
         group = support_tables['same_p_groups'].get(f"{gene}:{hgvs_p}", [])
-        if any(v.get('clinicalsignificance', '').lower() in ['pathogenic', 'likely pathogenic'] for v in group):
-            criteria.append("PS1")
+        same_protein_pathogenic = [
+            v for v in group
+            if 'pathogenic' in v.get('clinicalsignificance', '').lower() and 
+            v.get('hgvs_c') != hgvs_c  # exclude self
+    ]
+    if same_protein_pathogenic:
+        criteria.append("PS1")
+
 
 
 
