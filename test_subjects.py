@@ -73,4 +73,56 @@ test_subjects ={
     'c.841G>C p.Asp281His', # pathogeniv/likely pathogenic, PM5
     'c.841G>A p.Asp281Asn', # pathogenic/likely pathogenic & oncogenic, PM5
     'c.841G>T p.Asp281Tyr', # pathogenic/likely pathogenic & oncogenic, PM5
+
+    'c.818G>T p.Arg273Leu', # pathogenic and oncogenic
+    'c.818G>C p.Arg273Pro', # pathogenic/likely pathogenic
+    'c.818G>A p.Arg273His', # pathogenic and oncogenic
+    'c.817C>G p.Arg273Gly', # pathogenic/likely pathogenic and likely oncogenic
+    'c.817C>A p.Arg273Ser', # pathogenic
+    'c.817C>T p.Arg273Cys', # pathogenic/likely pathogenic and oncogenic
+
+    'c.815T>C p.Val272Ala', # Uncertain significance
+    'c.815T>C p.Val272Glu', # Conflicting classifications of pathogenicity
+    'c.815T>G p.Val272Gly', # Conflicting classifications of pathogenicity
+    'c.814G>C p.Val272Leu', # pathogenic
+    'c.814G>A p.Val272Met', # pathogenic and oncogenic
+    'c.814G>T p.Val272Leu', # pathogenic/likely pathogenic
+
+    'c.797G>T p.Gly266Val', # conflicting classifications of pathogenicity
+    'c.797G>A p.Gly266Glu', # pathogenic/likely pathogenic and oncogenic
+    'c.796G>A p.Gly266Arg', # pathogenic and oncogenic
+    'c.796G>C p.Gly266Arg', # pathogenic
+
+    'c.738G>C p.Met246Ile', # likely pathogenic
+    'c.738G>T p.Met246Ile', # conflicting classifications of pathogenicity
+    'c.738G>A p.Met246Ile', # pathogenic/likely pathogenic and oncogenic
+    'c.737T>A p.Met246Lys', # likely pathogenic
+    'c.737T>C p.Met246Thr', # conflicting classifications of pathogenicity
+    'c.737T>G p.Met246Arg', # conflicting classifications of pathogenicity
+    'c.736A>T p.Met246Leu', # Uncertain significance
+    'c.736A>C p.Met246Leu', # conflicting classifications of pathogenicity
+    'c.736A>G p.Met246Val', # pathogenic/likely pathogenic
+
+    'c.659A>G p.Tyr220Cys', # pathogenic and oncogenic
+    'c.659A>C p.Tyr220Ser', # pathogenic
+    'c.658T>G p.Tyr220Asp', # conflicting classifications of pathogenicity
+    'c.658T>A p.Tyr220Asn', # conflicting classifications of pathogenicity and likely oncogenic
+    'c.658T>C p.Tyr220His', # pathogenic/likely pathogenic
+
+    'c.537T>A p.His179Gln', # pathogenic
+    'c.537T>G p.His179Gln', # pathogenic/likely pathogenic
+    'c.536A>C p.His179Pro', # conflicting classifications of pathogenicity
+    'c.536A>T p.His179Leu', # conflicting classifications of pathogenicity
+    'c.536A>G p.His179Arg', # conflicting classifications of pathogenicity
+    'c.535C>G p.His179Asp', # pathogenic/likely pathogenic
+    'c.535C>A p.His179Asn', # conflicting classifications of pathogenicity
+    'c.535C>T p.His179Tyr', # pathogenic/likely pathogenic and oncogenic
+
+    'c.339C>G p.Phe113Leu', # pathogenic
+    'c.339C>A p.Phe113Leu', # likely pathogenic
+    'c.338T>C p.Phe113Ser', # Uncertain significance
+    'c.338T>G p.Phe113Cys', # pathogenic
+    'c.337T>C p.Phe113Leu', # pathogenic
+    'c.337T>A p.Phe113Ile', # pathogenic/likely pathogenic
+    'c.337T>G p.Phe113Val' # conflicting classifications of pathogenicity
 }
