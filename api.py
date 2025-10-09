@@ -30,160 +30,141 @@ def health_check():
     return{"status":"clinvar api is running"}
 
 
-'''
-# --- NEW --- #
-@app.get("/user_classify_variant")  
-def user_classify_variant(
-    gene: str = Query(..., description="Gene symbol (e.g., BRCA1)"),
-    c_hgvs: str = Query(..., description="c.HGVS notation (e.g., c.123G>T)"),
-    p_hgvs: Optional[str] = Query(None, description="Optional p.HGVS notation (e.g., p.Val12Cys)")
-):
-    user_gene = gene.strip()
-    user_c_hgvs = c_hgvs.strip()
-    user_p_hgvs = p_hgvs.strip() if p_hgvs else None
-
-    return {
-        "message": "Variant input received.",
-        "gene": user_gene,
-        "c.HGVS": user_c_hgvs,
-        "p.HGVS": user_p_hgvs
-    }
 
 
-'''
-'''
-@app.get("/user_classify_variant")  
-def user_classify_variant(
-    gene: str = Query(..., description="Gene symbol (e.g., BRCA1)"),
-    hgvs_c: str = Query(..., description="c.HGVS notation (e.g., c.123G>T)"),
-    hgvs_p: Optional[str] = Query(None, description="Optional p.HGVS notation (e.g., p.Val12Cys)")
-):
-    conn = None 
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        query = """
-        SELECT * 
-        FROM gene_variants
-        WHERE gene_symbol = %s AND hgvs_c = %s
-        """
-        params = [gene.strip(), hgvs_c.strip()]
-        cur.execute(query, params)
-        results = cur.fetchall()
+def normalize(value):
+    if value is None or (isinstance(value, str) and value.strip() == ""):
+        return None
+    return value
 
-        if not results:
-            return{"error": f"No variant found for gene '{gene}' and c.HGVS '{hgvs_c}'"}
-        
-        variant = results[0]
-        variant_summary ={
-            "variant id": variant.get("variation_id"),
-            "gene": variant.get("gene_symbol"),
-            "c.HGVS": variant.get("hgvs_c"),
-            "p.HGVS": hgvs_p.strip() if hgvs_p else variant.get("hgvs_p"),
-            "protein_pos": variant.get("protein_pos"),
-            "molecular_consequence": variant.get("molecular_consequence"),
-            "clinicalsignificance": variant.get("clinicalsignificance"),
-            "review_status": variant.get("review_status"),
-             # "dbSNP": variant.get("rsid"),
-            "other_fields": {k: v for k, v in variant.items() if k not in [
-                "gene_symbol", "transcript_id", "hgvs_c", "hgvs_p", "protein_pos", 
-                "molecular_consequence", "clinicalsignificance", 
-                "review_status"
-            ]}
-        }
 
-        return variant_summary
-    except Exception as e:
-        return{"error": str(e)}
-    finally:
-        if conn:
-            conn.close()
-
-'''
-@app.get("/user_classify_variant")  
-def user_classify_variant(
-    gene_symbol: str = Query(..., description="Gene symbol (e.g., BRCA1)"),
-    hgvs_c: str = Query(..., description="c.HGVS notation (e.g., c.123G>T)"),
-    hgvs_p: Optional[str] = Query(None, description="Optional p.HGVS notation (e.g., p.Val12Cys)")
-):
-    conn = None 
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        # 1. Αναζήτηση παραλλαγής με gene + hgvs_c
-        query = """
-        SELECT * 
-        FROM gene_variants
-        WHERE gene_symbol = %s AND hgvs_c = %s
-        """
-        params = [gene_symbol.strip(), hgvs_c.strip()]
-        cur.execute(query, params)
-        results = cur.fetchall()
-
-        # 2. Αν βρεθεί, επιστρέφουμε τα δεδομένα
-        if results:
-            variant = results[0]
-            variant_summary = {
-                "variant id": variant.get("variation_id"),
-                "gene": variant.get("gene_symbol"),
-                "c.HGVS": variant.get("hgvs_c"),
-                "p.HGVS": hgvs_p.strip() if hgvs_p else variant.get("hgvs_p"),
-                "protein_pos": variant.get("protein_pos"),
-                "molecular_consequence": variant.get("molecular_consequence"),
-                "clinicalsignificance": variant.get("clinicalsignificance"),
-                "review_status": variant.get("review_status"),
-                "other_fields": {k: v for k, v in variant.items() if k not in [
-                    "gene_symbol", "transcript_id", "hgvs_c", "hgvs_p", "protein_pos", 
-                    "molecular_consequence", "clinicalsignificance", "review_status"
-                ]}
-            }
-            return variant_summary
-
-        # 3. Αν ΔΕΝ βρεθεί, κάνουμε grouping by gene για PS1/PM5/PP5/BP6
-        cur.execute("""
-            SELECT gene_symbol, hgvs_c, hgvs_p, protein_pos, clinicalsignificance, clinsigsimple
-            FROM gene_variants
-            WHERE gene_symbol = %s;
-        """, (gene_symbol,))
-        variants = cur.fetchall()
-
-        if not variants:
-            return {"error": f"Δεν βρέθηκαν μεταλλάξεις για το γονίδιο {gene_symbol}"}
-
-        df = pd.DataFrame(variants)
-
+def build_variant_summary_with_acmg(result, gene_symbol, hgvs_c, hgvs_p, df_for_acmg):
+    if result is None:
         protein_pos = None
         if hgvs_p:
             match = re.search(r"\d+", hgvs_p)
             if match:
                 protein_pos = int(match.group())
-
-        # ✅ Διορθωμένο: το σωστό key είναι gene_symbol
-        row = pd.Series({
-            "gene_symbol": gene_symbol,
+        fake_row = pd.Series({
+            "gene_symbol": gene_symbol,   # ❌ Διορθώθηκε: χρησιμοποιούμε gene_symbol του χρήστη
             "hgvs_c": hgvs_c,
             "hgvs_p": hgvs_p,
             "protein_pos": protein_pos
-            
         })
+        acmg_criteria = apply_ps1_pm5_pp5_bp6(fake_row, df_for_acmg)
+        acmg_combined = "; ".join(acmg_criteria) if acmg_criteria else None
+    else:
+        acmg_criteria = result.get("acmg_criteria") or []
+        acmg_combined = result.get("acmg_combined_criteria")
+    
+    return {
+        "variant id": result.get("variation_id") if result else None,
+        "gene": result.get("gene_symbol") if result else gene_symbol,
+        "c.HGVS": hgvs_c,
+        "p.HGVS": hgvs_p,
+        "protein_pos": result.get("protein_pos") if result else protein_pos,
+        "molecular_consequence": result.get("molecular_consequence") if result else None,
+        "clinicalsignificance": result.get("clinicalsignificance") if result else "not provided",
+        "review_status": result.get("review_status") if result else None,
+        "other_fields": {
+            "variation_id": result.get("variation_id") if result else None,
+            "phenotype_list": result.get("phenotype_list") if result else None,
+            "assembly": result.get("assembly") if result else None,
+            "chromosome": result.get("chromosome") if result else None,
+            "start_pos": result.get("start_pos") if result else None,
+            "end_pos": result.get("end_pos") if result else None,
+            "reference_allele": result.get("reference_allele") if result else None,
+            "alternate_allele": result.get("alternate_allele") if result else None,
+            "acmg_criteria": acmg_criteria,
+            "conflicting_interpretations": result.get("conflicting_interpretations") if result else None,
+            "rcvaccession": result.get("rcvaccession") if result else [],
+            "last_updated": result.get("last_updated") if result else None,
+            "last_evaluated": result.get("last_evaluated") if result else None,
+            "acmg_combined_criteria": acmg_combined,
+            "acmg_from_grouping": result.get("acmg_from_grouping") if result else None,
+            "clinsigsimple": result.get("clinsigsimple") if result else None
+        }
+    }
 
-        criteria = apply_ps1_pm5_pp5_bp6(row, df)
+@app.get("/user_classify_variant")
+def user_classify_variant(
+    gene_symbol: str = Query(..., description="Gene symbol (π.χ. BRCA1)"),
+    hgvs_c: str = Query(..., description="c.HGVS notation (π.χ. c.123G>T)"),
+    hgvs_p: Optional[str] = Query(None, description="Optional p.HGVS notation")
+):
+    conn = None
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
 
+        # Αναζήτηση παραλλαγής
+        cur.execute("SELECT * FROM gene_variants WHERE gene_symbol=%s AND hgvs_c=%s", (gene_symbol.strip(), hgvs_c.strip()))
+        results = cur.fetchall()
+        variant = results[0] if results else None
+
+        # Όλες οι μεταλλάξεις για υπολογισμό ACMG
+        cur.execute("SELECT gene_symbol, hgvs_c, hgvs_p, protein_pos, clinicalsignificance, clinsigsimple FROM gene_variants WHERE gene_symbol=%s", (gene_symbol,))
+        df_for_acmg = pd.DataFrame(cur.fetchall())
+
+        # Αν δεν υπάρχει η μετάλλαξη, φτιάχνουμε fake row
+        if variant is None:
+            protein_pos = None
+            if hgvs_p:
+                match = re.search(r"\d+", hgvs_p)
+                if match:
+                    protein_pos = int(match.group())
+            row = pd.Series({
+                "gene_symbol": gene_symbol,
+                "hgvs_c": hgvs_c,
+                "hgvs_p": hgvs_p,
+                "protein_pos": protein_pos
+            })
+        else:
+            row = pd.Series({
+                "gene_symbol": variant.get("gene_symbol"),
+                "hgvs_c": variant.get("hgvs_c"),
+                "hgvs_p": variant.get("hgvs_p"),
+                "protein_pos": variant.get("protein_pos")
+            })
+
+        # Υπολογισμός ACMG criteria (επιστρέφει dict με Yes/No)
+        acmg_criteria = apply_ps1_pm5_pp5_bp6(row, df_for_acmg, return_dict=True)
+
+        # Συγκεντρώνουμε το JSON
         return {
+            "variant id": variant.get("variation_id") if variant else None,
             "gene": gene_symbol,
-            "hgvs_c": hgvs_c,
-            "hgvs_p": hgvs_p,
-            "criteria": criteria,
-            "conflict_score": len(criteria)
+            "c.HGVS": hgvs_c,
+            "p.HGVS": hgvs_p,
+            "protein_pos": row.get("protein_pos"),
+            "molecular_consequence": variant.get("molecular_consequence") if variant else None,
+            "clinicalsignificance": variant.get("clinicalsignificance") if variant else "not provided",
+            "review_status": variant.get("review_status") if variant else None,
+            "other_fields": {
+                "variation_id": variant.get("variation_id") if variant else None,
+                "phenotype_list": variant.get("phenotype_list") if variant else None,
+                "assembly": variant.get("assembly") if variant else None,
+                "chromosome": variant.get("chromosome") if variant else None,
+                "start_pos": variant.get("start_pos") if variant else None,
+                "end_pos": variant.get("end_pos") if variant else None,
+                "reference_allele": variant.get("reference_allele") if variant else None,
+                "alternate_allele": variant.get("alternate_allele") if variant else None,
+                "acmg_criteria": acmg_criteria,
+                "conflicting_interpretations": variant.get("conflicting_interpretations") if variant else None,
+                "rcvaccession": variant.get("rcvaccession") if variant else [],
+                "last_updated": variant.get("last_updated") if variant else None,
+                "last_evaluated": variant.get("last_evaluated") if variant else None,
+                "acmg_combined_criteria": "; ".join([k for k,v in acmg_criteria.items() if v=="Yes"]) or None,
+                "acmg_from_grouping": "; ".join([k for k,v in acmg_criteria.items() if v=="Yes"]) or None,
+                "clinsigsimple": variant.get("clinsigsimple") if variant else None
+            }
         }
 
-    except Exception as e:
-        return {"error": str(e)}
     finally:
         if conn:
             conn.close()
+
 
 
 
@@ -204,60 +185,6 @@ def calculate_pp5_bp6_from_summary(variants):
 
     return pp5, bp6
 
-
-'''
-def calculate_pp5_bp6_from_summary(variants):
-    """
-    Υπολογισμός PP5 / BP6 από variant summary:
-    - Δεν κοιτάμε τα ονόματα των submitters
-    - Χρησιμοποιούμε μόνο count + consistency
-    """
-    significance_counts = Counter([v['clinicalsignificance'] for v in variants if v['clinicalsignificance']])
-
-    # Υπολογισμός PP5
-    pp5 = significance_counts.get("Pathogenic", 0) >= 2 and len(significance_counts) == 1
-
-    # Υπολογισμός BP6
-    bp6 = significance_counts.get("Benign", 0) >= 2 and len(significance_counts) == 1
-
-    return pp5, bp6
-'''
-
-'''
-@app.get("/acmg_criteria_bp6_pp5")
-def get_acmg_criteria(gene: str = Query(..., description="Γονίδιο π.χ. KLHL10")):
-    conn = None
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        cur.execute("""
-            SELECT clinicalsignificance
-            FROM gene_variants
-            WHERE gene_symbol = %s;
-        """, (gene,))
-        variants = cur.fetchall()
-
-        if not variants:
-            return {"error": f"Δεν βρέθηκαν μεταλλάξεις για το γονίδιο {gene}"}
-
-        pp5, bp6 = calculate_pp5_bp6_from_summary(variants)
-        conflict_score = int(pp5) + int(bp6)
-
-        return {
-            "gene": gene,
-            "PP5": pp5,
-            "BP6": bp6,
-            "conflict_score": conflict_score
-        }
-
-    except Exception as e:
-        return {"error": str(e)}
-    finally:
-        if conn:
-            conn.close()
-
-'''
 
 
 @app.get("/acmg_criteria_bp6_pp5")
@@ -343,40 +270,6 @@ def variants_by_genomic_range(
         if conn:
             conn.close()
 
-
-'''
-@app.get("/variants_by_protein_pos")
-def variants_by_protein_pos(
-    gene: str = Query(..., description="Gene symbol (e.g. TP53)"),
-    start_pos: int = Query(..., description="Start of protein position range (e.g. 350)"),
-     end_pos: Optional[int] = Query(None, description="End of protein position range (optional)")
-    ):
-   # end_pos: int = Query(..., description="End of protein position range (e.g. 400)")
-
-    conn = None
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        query = """
-        SELECT gene_symbol, protein_pos, hgvs_c, hgvs_p
-        FROM gene_variants
-        WHERE gene_symbol = %s
-          AND protein_pos BETWEEN %s AND %s
-        """
-        cur.execute(query, (gene, start_pos))
-        results = cur.fetchall()
-
-        return {"results": results}
-    
-    except Exception as e:
-        return {"error": str(e)}
-    
-    finally:
-        if conn:
-            conn.close()
-
-'''
 
 
 @app.get("/variants_by_protein_pos")
@@ -522,29 +415,8 @@ def variant_counts(gene: str, consequence: Optional[str] = None, significance: O
         return {"error": str(e)}
     finally:
         if conn: conn.close()
-    
-'''
-@app.get("/variants_by_position")
-def variants_by_position(gene: str, min_pos: Optional[int] = None, max_pos: Optional[int] = None):
-    conn = None
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        query = "SELECT * FROM gene_variants WHERE gene_symbol = %s"
-        params = [gene]
-        if min_pos is not None:
-            query += " AND start_pos >= %s"
-            params.append(min_pos)
-        if max_pos is not None:
-            query += " AND end_pos <= %s"
-            params.append(max_pos)
-        cur.execute(query, tuple(params))
-        return cur.fetchall()
-    except Exception as e:
-        return {"error": str(e)}
-    finally:
-        if conn: conn.close()
-'''
+ 
+ 
 
 @app.get("/available_genes")
 def available_genes():

@@ -22,7 +22,8 @@ DB_CONFIG = {
     "port": 5432
 }
 
-# --- Βοηθητικές Συναρτήσεις (ΑΚΡΙΒΩΣ όπως στο pipeline) ---
+#Βοηθητικές Συναρτήσεις
+#Δημιουργία πινάκων στη βάση 
 def create_tables(conn: psycopg2.extensions.connection) -> None:
     """Δημιουργία πινάκων βάσης (ίδια με pipeline)"""
     with conn.cursor() as cur:
@@ -104,6 +105,8 @@ def variant_consequence(hgvs_c: Optional[str], hgvs_p: Optional[str]) -> dict:
         'protein_consequence': consequence(hgvs_p),
         'dna_consequence': consequence_dna(hgvs_c)
     }
+
+
 def combine_consequence(row):
     if row["protein_consequence"] != "unknown":
         return row["protein_consequence"]
@@ -114,7 +117,7 @@ def combine_consequence(row):
 
 
 def extract_HGVS(name: str) -> Dict[str, Optional[str]]:
-    """Εξαγωγή HGVS (ίδια με pipeline)"""
+    """Εξαγωγή HGVS """
     result = {'hgvs_c': None, 'hgvs_p': None}
     if not pd.isna(name) and isinstance(name, str):
         dna_pattern = re.compile(r'(c\.[^*\s]+)')
@@ -134,7 +137,7 @@ def extract_HGVS(name: str) -> Dict[str, Optional[str]]:
     return result
 
 def extract_protein_pos(hgvs_p: str) -> Optional[int]:
-    """Εξαγωγή θέσης πρωτεΐνης (ίδια με pipeline)"""
+    """Εξαγωγή θέσης πρωτεΐνης"""
     if not hgvs_p:
         return None
    #match = re.search(r'[A-Z][a-z]{2}(\d+)[A-Z][a-z]{2}', hgvs_p)
@@ -142,7 +145,7 @@ def extract_protein_pos(hgvs_p: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
-    """Επεξεργασία ClinVar με zcat + grep (ίδια με pipeline)"""
+    """Επεξεργασία ClinVar με zcat + grep"""
     print("Φιλτράρισμα δεδομένων με zcat + grep...")
     grep_cmd = (
         f"zcat {variant_gz_path} | head -n 1 > filtered_variants.tsv && "
@@ -168,7 +171,7 @@ def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
         "clinicalsignificance": "clinicalsignificance",
     }, inplace=True)
 
-    # Rename clinical significance column to your preferred format
+    # Rename clinical significance column
     if 'clinical_significance' in df.columns:
         df = df.rename(columns={'clinicalsignificance': 'clinicalsignificance'})
 
@@ -211,50 +214,7 @@ def process_clinvar_data(variant_gz_path: str) -> pd.DataFrame:
 
     return df
 
-'''
-def apply_acmg_criteria(df: pd.DataFrame) -> pd.DataFrame:
-    """Εφαρμογή ACMG κριτηρίων (ΑΚΡΙΒΩΣ όπως στο pipeline)"""
-    known_pathogenic = {
-        'p.Arg504Gly': {'dna': 'c.1510A>T', 'significance': 'Pathogenic'},
-        'p.Trp41*': {'dna': 'c.123G>A', 'significance': 'Pathogenic'}
-    }
-    trusted_submitters = {'ClinVar', 'ExpertLab'}
-    pathogenic_positions = {41, 504}
 
-    def _apply_criteria(row):
-        criteria = []
-        
-        # PS1
-        if row['hgvs_p'] in known_pathogenic:
-            if row['hgvs_c'] != known_pathogenic[row['hgvs_p']]['dna']:
-                criteria.append("PS1")
-
-        # PM5
-        protein_pos = row['protein_pos']
-        if protein_pos in pathogenic_positions and row['hgvs_p'] not in known_pathogenic:
-            criteria.append('PM5')
-
-        # PP5
-        if (row['clinicalsignificance'] == 'Pathogenic' 
-                and row.get('NumberSubmitters', 0) >= 3
-                and row.get('conflictinginterpretations', '.') == '.'
-                and row.get('submittercategories', '') in ["2", "3"]):
-                
-            criteria.append('PP5')
-
-        # BP6
-        if (row['clinicalsignificance'] == 'Benign' 
-                and row.get('NumberSubmitters', 0) >= 3 
-                and row.get('conflictinginterpretations', '.') == '.'
-                and row.get('submittercategories', '') in ["2", "3"]):
-            criteria.append('BP6')
-
-        return criteria 
-
-    # Εφαρμογή σε όλο το dataframe
-    df['ACMG_criteria'] = df.apply(_apply_criteria, axis=1)
-    return df
-'''
 
 def variant_assortments(df, ref_gene, ref_c, ref_p=None, ref_pos=None):
     """Εύρεση παρόμοιων μεταλλάξεων"""
@@ -263,6 +223,7 @@ def variant_assortments(df, ref_gene, ref_c, ref_p=None, ref_pos=None):
     same_p = df[(df['gene_symbol'] == ref_gene) & (df['hgvs_p'] == ref_p) & (df['hgvs_c'] != ref_c)].copy() if ref_p else pd.DataFrame()
     same_pos = df[(df['gene_symbol'] == ref_gene) & (df['protein_pos'] == ref_pos) & (df['hgvs_p'] != ref_p)].copy() if ref_pos else pd.DataFrame()
     return same_c, same_p, same_pos
+
 
 def split_by_significance(df):
     """Ομαδοποίηση κατά κλινική σημασία"""
@@ -280,31 +241,9 @@ def split_by_significance(df):
         'Benign': df[df['clinicalsignificance'].str.contains('Benign', na=False)],
         'VUS': df[df['clinicalsignificance'].str.contains('Uncertain significance', na=False)]
     }
-'''
-def build_acmg_support_tables(same_c_groups, same_p_groups, same_pos_groups):
-    """Κατασκευή πινάκων υποστήριξης ACMG (με έλεγχο ύπαρξης δεδομένων και στηλών)"""
 
-    def safe_select(df, columns):
-        if df is None or df.empty:
-            return pd.DataFrame(columns=columns)
-        # Έλεγχος αν όλες οι στήλες υπάρχουν
-        missing_cols = [col for col in columns if col not in df.columns]
-        if missing_cols:
-            return pd.DataFrame(columns=columns)
-        return df[columns]
 
-    pp5_df = safe_select(same_c_groups.get('Pathogenic', pd.DataFrame()), ['hgvs_c'])
-    bp6_df = safe_select(same_c_groups.get('Benign', pd.DataFrame()), ['hgvs_c'])
-    ps1_df = safe_select(same_p_groups.get('Pathogenic', pd.DataFrame()), ['hgvs_p', 'hgvs_c'])
-    pm5_df = safe_select(same_pos_groups.get('Pathogenic', pd.DataFrame()), ['hgvs_p', 'hgvs_c', 'protein_pos'])
 
-    return {
-        'PP5': pp5_df,
-        'BP6': bp6_df,
-        'PS1': ps1_df,
-        'PM5': pm5_df
-    }
-'''
 def build_acmg_support_tables(df):
     """Φτιάχνει υποστηρικτικούς πίνακες grouping για PS1 / PM5 / PP5 / BP6"""
     df_pathogenic = df[df['clinicalsignificance'].str.contains('pathogenic', case=False, na=False)]
@@ -335,111 +274,70 @@ def build_acmg_support_tables(df):
     }
 
 
-'''
-def mark_acmg_criteria(df, support):
-    """Σήμανση variants με βάση τα groups (ίδια με pipeline)"""
-    def _determine_criteria(row):
-        crit = []
-        if row['hgvs_c'] in support['PP5']['hgvs_c'].values:
-            crit.append('PP5')
-        if row['hgvs_c'] in support['BP6']['hgvs_c'].values:
-            crit.append('BP6')
-        if pd.notna(row['hgvs_p']) and pd.notna(row['hgvs_c']):
-            ps1_matches = support['PS1'][
-                (support['PS1']['hgvs_p'] == row['hgvs_p']) & 
-                (support['PS1']['hgvs_c'] != row['hgvs_c'])]
-            if not ps1_matches.empty:
-                crit.append('PS1')
-        if pd.notna(row['protein_pos']) and pd.notna(row['hgvs_p']):
-            pm5_matches = support['PM5'][
-                (support['PM5']['protein_pos'] == row['protein_pos']) & 
-                (support['PM5']['hgvs_p'] != row['hgvs_p'])]
-            if not pm5_matches.empty:
-                crit.append('PM5')
-        return "; ".join(crit) if crit else ""
-    
-    df['acmg_from_grouping'] = df.apply(_determine_criteria, axis=1)
-    return df
-'''
+
+
 
 def mark_acmg_criteria(row, support_tables):
-    criteria = []
+    criteria = {"PS1": "No", "PM5": "No", "PP5": "No", "BP6": "No"}
 
     gene = row['gene_symbol']
     hgvs_c = row['hgvs_c']
     hgvs_p = row['hgvs_p']
     prot_pos = row.get('protein_pos')
 
-#PP5 BP6
+    # PP5 / BP6
     if gene and hgvs_c:
         group = support_tables['same_c_groups'].get(f"{gene}:{hgvs_c}", [])
         if any('pathogenic' in v.get('clinicalsignificance', '').lower() for v in group):
-            criteria.append("PP5")  # ή BP6 για benign
+            criteria["PP5"] = "Yes"
         if any('benign' in v.get('clinicalsignificance', '').lower() for v in group):
-            criteria.append("BP6")
+            criteria["BP6"] = "Yes"
 
-
-#PS1
-    #if gene and hgvs_p:
-     #   group = support_tables['same_p_groups'].get(f"{gene}:{hgvs_p}", [])
-      #  if any(v.get('clinicalsignificance', '').lower() in ['pathogenic', 'likely pathogenic'] for v in group):
-       #     criteria.append("PS1")
+    # PS1
     if gene and hgvs_p:
         group = support_tables['same_p_groups'].get(f"{gene}:{hgvs_p}", [])
         same_protein_pathogenic = [
             v for v in group
             if 'pathogenic' in v.get('clinicalsignificance', '').lower() and 
-            v.get('hgvs_c') != hgvs_c  # exclude self
-    ]
-    if same_protein_pathogenic:
-        criteria.append("PS1")
+            v.get('hgvs_c') != hgvs_c
+        ]
+        if same_protein_pathogenic:
+            criteria["PS1"] = "Yes"
 
-
-
-
-    # PM5: Novel missense με διαφορετικό path/likely path missense στην ίδια θέση
+    # PM5
     if gene and prot_pos:
-        # Αρχικά παίρνουμε όλα τα variants στην ίδια θέση
         group = support_tables['same_pos_groups'].get(f"{gene}:{str(prot_pos)}", [])
-        
-        # Φίλτρο για missense variants που είναι path ή likely path
         path_missense_variants = [
             v for v in group
-            if v.get('variant_type', '').lower() == 'missense'
-            and v.get('clinicalsignificance', '').lower() in ['pathogenic']
+            if v.get('variant_type', '').lower() == 'missense' and
+               v.get('clinicalsignificance', '').lower() in ['pathogenic']
         ]
         variant_type = row.get('variant_type', None)
-
-        
-        # Για να είναι PM5 πρέπει η τωρινή παραλλαγή να είναι novel missense (δηλαδή missense και όχι στα path_missense_variants)
         is_novel_missense = (
             variant_type == 'missense' and
             all(v.get('hgvs_p') != hgvs_p for v in path_missense_variants)
         )
-        
         if is_novel_missense and len(path_missense_variants) > 0:
-            criteria.append("PM5")
-
-
-    #if gene and prot_pos:
-     #   group = support_tables['same_pos_groups'].get(f"{gene}:{str(prot_pos)}", [])
-      #  if any('pathogenic' in v.get('clinicalsignificance', '').lower() for v in group):
-        #    criteria.append("PM5")
+            criteria["PM5"] = "Yes"
 
     return criteria
 
 
+def apply_ps1_pm5_pp5_bp6(row: pd.Series, df: pd.DataFrame, return_dict: bool = False):
+    """
+    Υπολογισμός PS1, PM5, PP5, BP6 με βάση τα δεδομένα του ClinVar.
+    Αν return_dict=True επιστρέφει dict {criterion: "Yes"/"No"}.
+    """
+    criteria_list = ["PS1", "PM5", "PP5", "BP6"]
+    criteria_result = {c: "No" for c in criteria_list}
 
-def apply_ps1_pm5_pp5_bp6(row: pd.Series, df: pd.DataFrame) -> List[str]:
-    """Υπολογισμός PS1, PM5, PP5, BP6 με βάση τα δεδομένα του ClinVar"""
-    criteria = []
-    gene = row['gene_symbol']
-    hgvs_c = row['hgvs_c']
-    hgvs_p = row['hgvs_p']
+    gene = row.get('gene_symbol')
+    hgvs_c = row.get('hgvs_c')
+    hgvs_p = row.get('hgvs_p')
     prot_pos = row.get('protein_pos')
 
     if pd.isna(gene) or pd.isna(hgvs_c) or pd.isna(hgvs_p) or pd.isna(prot_pos):
-        return criteria
+        return criteria_result if return_dict else []
 
     # ---- PS1 ----
     ps1_matches = df[
@@ -449,7 +347,7 @@ def apply_ps1_pm5_pp5_bp6(row: pd.Series, df: pd.DataFrame) -> List[str]:
         (df['clinsigsimple'].isin(['pathogenic', 'likely pathogenic']))
     ]
     if not ps1_matches.empty:
-        criteria.append("PS1")
+        criteria_result["PS1"] = "Yes"
 
     # ---- PM5 ----
     pm5_matches = df[
@@ -459,7 +357,7 @@ def apply_ps1_pm5_pp5_bp6(row: pd.Series, df: pd.DataFrame) -> List[str]:
         (df['clinsigsimple'].isin(['pathogenic', 'likely pathogenic']))
     ]
     if not pm5_matches.empty:
-        criteria.append("PM5")
+        criteria_result["PM5"] = "Yes"
 
     # ---- PP5 / BP6 ----
     same_c = df[
@@ -469,16 +367,20 @@ def apply_ps1_pm5_pp5_bp6(row: pd.Series, df: pd.DataFrame) -> List[str]:
     ]
     sigs = set(same_c['clinsigsimple'].dropna().tolist())
     if sigs and sigs.issubset({'pathogenic', 'likely pathogenic'}):
-        criteria.append("PP5")
+        criteria_result["PP5"] = "Yes"
     elif sigs and sigs.issubset({'benign', 'likely benign'}):
-        criteria.append("BP6")
+        criteria_result["BP6"] = "Yes"
 
-    return criteria
+    if return_dict:
+        return criteria_result
+    else:
+        return [k for k, v in criteria_result.items() if v == "Yes"]
+
 
 
 
 def insert_to_database(conn, df):
-    """Εισαγωγή στη βάση (ίδια με pipeline)"""
+    """Εισαγωγή στη βάση"""
     with conn.cursor() as cur:
         for _, row in df.iterrows():
             cur.execute("""
@@ -520,141 +422,56 @@ def insert_to_database(conn, df):
             ))
         conn.commit()
 
+        
 
-def group_based_acmg(row: pd.Series, df: pd.DataFrame) -> str:
+def group_based_acmg(row: pd.Series, df: pd.DataFrame) -> dict:
     """
     Επιστρέφει grouping-based ACMG κριτήρια (PS1, PM5) για το δεδομένο variant.
-    Βασίζεται σε: ίδιο protein position, ίδιο protein HGVS ή ίδιο cDNA HGVS με άλλα κλινικά σημαντικά variants.
+    Επιστρέφει πάντα dict με 'Yes' ή 'No' για κάθε κριτήριο.
     """
-    criteria = []
+    criteria = {"PS1": "No", "PM5": "No"}
 
     # PS1: Ίδιο πρωτεϊνικό αποτέλεσμα (HGVS_p) αλλά διαφορετικό HGVS_c, με Pathogenic απόφαση
-    same_p = df[(df['hgvs_p'] == row['hgvs_p']) & (df['hgvs_c'] != row['hgvs_c'])]
-    if not same_p.empty and any(same_p['clinicalsignificance'].str.contains('Pathogenic')):
-        criteria.append('PS1')
+    if pd.notna(row.get('hgvs_p')) and pd.notna(row.get('hgvs_c')):
+        same_p = df[(df['hgvs_p'] == row['hgvs_p']) & (df['hgvs_c'] != row['hgvs_c'])]
+        if not same_p.empty and any(same_p['clinicalsignificance'].str.contains('Pathogenic', case=False, na=False)):
+            criteria["PS1"] = "Yes"
 
     # PM5: Ίδια θέση (protein_pos), διαφορετικό HGVS_p, αλλά κάποια απόφαση Pathogenic
-    same_pos = df[(df['protein_pos'] == row['protein_pos']) & (df['hgvs_p'] != row['hgvs_p'])]
-    if not same_pos.empty and any(same_pos['clinicalsignificance'].str.contains('Pathogenic')):
-        criteria.append('PM5')
-
-    return "; ".join(criteria)
-
-'''
-def apply_acmg_criteria_to_row(row):
-    """Επιστρέφει τα ACMG criteria (PS1, PM5, PP5, BP6) για μία γραμμή"""
-    known_pathogenic = {
-        'p.Arg504Gly': {'dna': 'c.1510A>T', 'significance': 'Pathogenic'},
-        'p.Trp41*': {'dna': 'c.123G>A', 'significance': 'Pathogenic'}
-    }
-    pathogenic_positions = {41, 504}
-
-    criteria = []
-
-    # PS1
-    if row['hgvs_p'] in known_pathogenic:
-        if row['hgvs_c'] != known_pathogenic[row['hgvs_p']]['dna']:
-            criteria.append("PS1")
-
-    # PM5
-    protein_pos = row.get('protein_pos')
-    if protein_pos in pathogenic_positions and row['hgvs_p'] not in known_pathogenic:
-        criteria.append('PM5')
-
-    # PP5
-    if row.get('clinicalsignificance') == 'Pathogenic' and row.get('NumberSubmitters', 0) > 1 and row.get('conflictinginterpretations') == '.':
-        criteria.append('PP5')
-
-    # BP6
-    if row.get('clinicalsignificance') == 'Benign' and row.get('NumberSubmitters', 0) > 1 and row.get('conflictinginterpretations') == '.':
-        criteria.append('BP6')
+    if pd.notna(row.get('protein_pos')) and pd.notna(row.get('hgvs_p')):
+        same_pos = df[(df['protein_pos'] == row['protein_pos']) & (df['hgvs_p'] != row['hgvs_p'])]
+        if not same_pos.empty and any(same_pos['clinicalsignificance'].str.contains('Pathogenic', case=False, na=False)):
+            criteria["PM5"] = "Yes"
 
     return criteria
-'''
-'''
-def categorize_variant_name(name: str) -> dict:
-    """
-    Κατηγοριοποιεί το όνομα μετάλλαξης από το πεδίο 'Name' του ClinVar
-    σε μεταλλάξεις DNA (c.), πρωτεΐνης (p.) και άλλους τύπους
-    """
-    result = {
-        'molecular_consequence': None,  # 'DNA', 'Protein', 'Other'
-        'DNA_variant': None,
-        'Protein_variant': None,
-        'Other_variant': None
-    }
-    
-    if not pd.isna(name) and isinstance(name, str):
-        # Κανονικές εκφράσεις για αναγνώριση τύπων μεταλλάξεων
-        dna_pattern = re.compile(r'(c\.[^*\s]+)')  # DNA μεταλλάξεις (c.) που δεν περιέχουν *
-        dna_star_pattern = re.compile(r'(c\.\*[\d_]+[^\s)]*)')  # DNA μεταλλάξεις με * (π.χ. c.*103_*106del)
-        protein_pattern = re.compile(r'(p\.[^\s)]+)')  # Πρωτεϊνικές μεταλλάξεις (p.)
-        
-        # Έλεγχος για DNA μεταλλάξεις (κανονικές και με *)
-        dna_match = dna_pattern.search(name)
-        dna_star_match = dna_star_pattern.search(name)
-        
-        if dna_match:
-            result['molecular_consequence'] = 'DNA'
-            result['DNA_variant'] = dna_match.group(1)
-        elif dna_star_match:
-            result['molecular_consequence'] = 'DNA'
-            result['DNA_variant'] = dna_star_match.group(1)
-        
-        # Έλεγχος για πρωτεϊνικές μεταλλάξεις
-        protein_match = protein_pattern.search(name)
-        if protein_match and not result['DNA_variant']:  # Προτεραιότητα στις DNA μεταλλάξεις
-            result['molecular_consequence'] = 'Protein'
-            result['Protein_variant'] = protein_match.group(1)
-        
-        # Αν δεν βρέθηκε τίποτα από τα παραπάνω
-        if not result['molecular_consequence']:
-            result['molecular_consequence'] = 'Other'
-            result['Other_variant'] = name
-    
-    return result
-'''
 
-
-def split_by_significance(df):
-    """Ομαδοποίηση κατά κλινική σημασία (ίδια με pipeline)"""
-    if df.empty:
-        # Επιστρέφουμε άδειες DataFrames για κάθε κατηγορία
-        return {
-            'Pathogenic': df,
-            'Benign': df,
-            'VUS': df
-        }
-
-    return {
-        'Pathogenic': df[df['clinicalsignificance'].str.contains('Pathogenic', na=False)],
-        'Benign': df[df['clinicalsignificance'].str.contains('Benign', na=False)],
-        'VUS': df[df['clinicalsignificance'].str.contains('Uncertain significance', na=False)]
-    }
 
 
 def simplify_clinical_significance(df):
-    # Μετατροπή σε μικρά γράμματα για ευκολότερο mapping
+    keyword_map = [
+        ("conflicting", "conflicting"),
+        ("likely pathogenic", "likely pathogenic"),
+        ("pathogenic", "pathogenic"),
+        ("likely benign", "likely benign"),
+        ("benign", "benign"),
+        ("uncertain significance", "vus"),
+        ("VUS", "VUS"),
+    ]
+
     def map_significance(cs):
-        if cs is None or cs == '' or cs.lower() == 'not provided':
-            return 'not provided'
+        if cs is None or cs.strip() == "" or cs.lower() == "not provided":
+            return "not provided"
         cs = cs.lower()
-        if 'pathogenic' in cs and 'likely' not in cs:
-            return 'pathogenic'
-        elif 'likely pathogenic' in cs:
-            return 'likely pathogenic'
-        elif 'benign' in cs and 'likely' not in cs:
-            return 'benign'
-        elif 'likely benign' in cs:
-            return 'likely benign'
-        elif 'uncertain significance' in cs or 'vus' in cs:
-            return 'vus'
-        elif 'conflicting interpretations' in cs:
-            return 'conflicting'
-        else:
-            return 'other'
-    df['clinsigsimple'] = df['clinicalsignificance'].apply(map_significance)
+
+        # ψάχνουμε με σειρά προτεραιότητας
+        for keyword, label in keyword_map:
+            if keyword in cs:
+                return label
+        return "other"
+
+    df["clinsigsimple"] = df["clinicalsignificance"].apply(map_significance)
     return df
+
 
 def compute_conflictinginterpretations(df):
     conflict_dict = {}
